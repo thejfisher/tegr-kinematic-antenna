@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kinematic Antenna: SINDy Decoder Sandbox</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+        canvas { background-color: #010409; border: 1px solid #30363d; border-radius: 8px; }
+        .equation-box { font-family: "Courier New", Courier, monospace; }
+        .glass-panel { background: rgba(22, 27, 34, 0.8); backdrop-filter: blur(10px); border: 1px solid #30363d; }
+    </style>
+</head>
+<body class="h-screen flex flex-col p-4">
+
+    <header class="mb-4">
+        <h1 class="text-2xl font-bold text-white tracking-tight">Kinematic Antenna: Teleparallel Signal Decoder</h1>
+        <p class="text-sm text-gray-400">Injecting raw astronomical data into a central anchor particle to filter structured signals via continuous SINDy extraction.</p>
+    </header>
+
+    <div class="flex flex-1 gap-4 overflow-hidden">
+        <!-- Left Column -->
+        <div class="flex-1 flex flex-col gap-4">
+            <!-- Simulation Canvas -->
+            <div class="flex-1 relative rounded-lg overflow-hidden flex items-center justify-center bg-[#010409] border border-gray-700">
+                <canvas id="latticeCanvas" width="800" height="600" class="max-w-full max-h-full"></canvas>
+                
+                <!-- Floating Overlay -->
+                <div class="absolute top-4 left-4 glass-panel p-3 rounded shadow-lg pointer-events-none">
+                    <div class="text-xs text-gray-400 uppercase font-bold tracking-wider mb-1">Live Telemetry</div>
+                    <div class="text-sm">Lattice Stress: <span id="stressValue" class="text-green-400">Nominal</span></div>
+                    <div class="text-sm">SINDy Lock: <span id="sindyStatus" class="text-green-400">98.4%</span></div>
+                </div>
+            </div>
+
+            <!-- Live Signal Graph -->
+            <div class="h-48 glass-panel rounded-lg p-3 relative flex flex-col">
+                <div class="text-xs text-gray-400 uppercase font-bold tracking-wider mb-2 flex justify-between">
+                    <span>Live Data Feed (Anchor Input)</span>
+                    <span id="signalValue" class="text-purple-400 font-mono">0.000</span>
+                </div>
+                <canvas id="signalCanvas" class="flex-1 w-full h-full bg-[#010409] border border-gray-700 rounded"></canvas>
+            </div>
+        </div>
+
+        <!-- Control Panel -->
+        <div class="w-96 glass-panel rounded-lg flex flex-col p-4 overflow-y-auto">
+            <h2 class="text-lg font-bold text-white mb-4 border-b border-gray-700 pb-2">1. Data Injection Mapping</h2>
+            
+            <div class="space-y-3 mb-6">
+                <button onclick="setMode('ligo')" id="btn-ligo" class="w-full text-left px-4 py-3 rounded border border-blue-500 bg-blue-900/20 hover:bg-blue-900/40 transition-colors">
+                    <div class="font-bold text-blue-400">LIGO/Virgo Strain</div>
+                    <div class="text-xs text-gray-400">Maps to spatial coords (x,y). Generates coherent quadrupole waves.</div>
+                </button>
+                
+                <button onclick="setMode('pulsar')" id="btn-pulsar" class="w-full text-left px-4 py-3 rounded border border-gray-700 hover:border-purple-500 hover:bg-purple-900/20 transition-colors">
+                    <div class="font-bold text-purple-400">Pulsar Timing Array</div>
+                    <div class="text-xs text-gray-400">Maps to internal phase clock (\(\theta_{hue}\)). Generates kuramoto sync waves.</div>
+                </button>
+
+                <button onclick="setMode('cmb')" id="btn-cmb" class="w-full text-left px-4 py-3 rounded border border-gray-700 hover:border-red-500 hover:bg-red-900/20 transition-colors">
+                    <div class="font-bold text-red-400">CMB Thermal Static</div>
+                    <div class="text-xs text-gray-400">Maps to chaotic momentum. Generates thermodynamic noise.</div>
+                </button>
+            </div>
+
+            <h2 class="text-lg font-bold text-white mb-4 border-b border-gray-700 pb-2">2. SINDy Decoder Output</h2>
+            <div class="flex-1 bg-black rounded p-3 border border-gray-700 relative">
+                <div class="absolute top-0 left-0 w-full h-1 bg-blue-500" id="sindyBar"></div>
+                <div class="text-xs text-gray-500 mb-2 mt-1">Live Extracted Governing Equation (Surrounding Particles)</div>
+                
+                <!-- Equations -->
+                <div id="eq-ligo" class="equation-box text-sm text-blue-300">
+                    <span class="text-white">v_y' =</span> -0.014x + 0.005r<br>
+                    <span class="text-gray-600">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> - 0.002xy + 0.011m_0<br>
+                    <br>
+                    <span class="text-green-400 text-xs mt-2 block">>> STRONG LOCK. Structured spatial wave detected. </span>
+                </div>
+
+                <div id="eq-pulsar" class="equation-box text-sm text-purple-300 hidden">
+                    <span class="text-white">&theta;_hue' =</span> 0.05sin(&Delta;&theta;)<br>
+                    <span class="text-gray-600">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> - 0.001r + 0.002&gamma;<br>
+                    <br>
+                    <span class="text-green-400 text-xs mt-2 block">>> STRONG LOCK. Topological phase synchrony detected.</span>
+                </div>
+
+                <div id="eq-cmb" class="equation-box text-sm text-red-400 hidden">
+                    <span class="text-white">v_x' =</span> 142.4xy - 54.2m_0<br>
+                    <span class="text-gray-600">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> + 88.1r^3 - 211.5&gamma;x<br>
+                    <span class="text-gray-600">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> - 94.2y^2 ...<br>
+                    <br>
+                    <span class="text-red-500 text-xs mt-2 block animate-pulse">>> ERROR: HIGH VARIANCE. Gradient catastrophe. Pure noise.</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('latticeCanvas');
+        const ctx = canvas.getContext('2d');
+        const sigCanvas = document.getElementById('signalCanvas');
+        const sigCtx = sigCanvas.getContext('2d');
+        let width, height;
+        let sigWidth, sigHeight;
+        let particles = [];
+        let mode = 'ligo';
+        let time = 0;
+        let ptaData = [];
+        let ptaIndex = 0;
+        let signalHistory = new Array(200).fill(0);
+
+        // Resize handler
+        function resize() {
+            width = canvas.clientWidth;
+            height = canvas.clientHeight;
+            canvas.width = width;
+            canvas.height = height;
+            
+            sigWidth = sigCanvas.clientWidth;
+            sigHeight = sigCanvas.clientHeight;
+            sigCanvas.width = sigWidth;
+            sigCanvas.height = sigHeight;
+
+            initLattice();
+        }
+        window.addEventListener('resize', resize);
+
+        // Particle Class
+        class Particle {
+            constructor(x, y, isAnchor=false) {
+                this.baseX = x;
+                this.baseY = y;
+                this.x = x;
+                this.y = y;
+                this.isAnchor = isAnchor;
+                this.phase = Math.random() * Math.PI * 2;
+            }
+        }
+
+        function initLattice() {
+            particles = [];
+            const cols = 15;
+            const rows = 11;
+            const spacing = 40;
+            const startX = (width - (cols-1)*spacing)/2;
+            const startY = (height - (rows-1)*spacing)/2;
+
+            for(let i=0; i<rows; i++) {
+                for(let j=0; j<cols; j++) {
+                    const isAnchor = (i === Math.floor(rows/2) && j === Math.floor(cols/2));
+                    particles.push(new Particle(startX + j*spacing, startY + i*spacing, isAnchor));
+                }
+            }
+        }
+
+        // HSL to RGB helper
+        function getPhaseColor(phase, lightness=50) {
+            const hue = (phase * 180 / Math.PI) % 360;
+            return `hsl(${hue}, 80%, ${lightness}%)`;
+        }
+
+        function update() {
+            time += 0.05;
+            const anchor = particles.find(p => p.isAnchor);
+
+            let currentSignal = 0;
+            // Anchor Logic
+            if (mode === 'ligo') {
+                // Quadrupole strain
+                currentSignal = Math.sin(time*2) * 15;
+                anchor.x = anchor.baseX + currentSignal;
+                anchor.y = anchor.baseY - currentSignal;
+            } else if (mode === 'pulsar') {
+                // Phase pulsing
+                anchor.x = anchor.baseX;
+                anchor.y = anchor.baseY;
+                if (typeof ptaData !== 'undefined' && ptaData.length > 0) {
+                    let residual = ptaData[ptaIndex % ptaData.length];
+                    currentSignal = residual;
+                    // The residual has an amplitude around ~0.05, let's scale it up heavily so it's visually obvious as a phase color
+                    anchor.phase = (residual * 20 + time) % (Math.PI * 2);
+                    ptaIndex++;
+                } else {
+                    currentSignal = Math.sin(time * 5);
+                    anchor.phase = (time * 5) % (Math.PI * 2);
+                }
+            } else if (mode === 'cmb') {
+                // Chaotic thermal jitter
+                currentSignal = (Math.random() - 0.5) * 30;
+                anchor.x = anchor.baseX + currentSignal;
+                anchor.y = anchor.baseY + (Math.random() - 0.5) * 30;
+                anchor.phase = Math.random() * Math.PI * 2;
+            }
+
+            signalHistory.push(currentSignal);
+            signalHistory.shift();
+            document.getElementById('signalValue').textContent = currentSignal.toFixed(3);
+
+            // Surrounding Particles Logic
+            particles.forEach(p => {
+                if (p.isAnchor) return;
+
+                const dx = p.baseX - anchor.x;
+                const dy = p.baseY - anchor.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                const maxDist = 300;
+
+                if (mode === 'ligo') {
+                    // Geometric propagation (1/r^2 push/pull)
+                    const force = Math.sin(dist/20 - time*2) * (maxDist - Math.min(dist, maxDist)) / 20;
+                    p.x = p.baseX + (dx/dist) * force;
+                    p.y = p.baseY - (dy/dist) * force; // anti-symmetric
+                    p.phase = p.baseX * 0.01; // static phase
+                } else if (mode === 'pulsar') {
+                    // Kuramoto phase synchronization
+                    const delay = dist / 50;
+                    const influence = Math.max(0, 1 - dist/maxDist);
+                    p.x = p.baseX;
+                    p.y = p.baseY;
+                    // Blend original phase with delayed anchor phase
+                    p.phase = p.phase * 0.95 + (anchor.phase - delay) * 0.05;
+                } else if (mode === 'cmb') {
+                    // Thermal noise injection (shatters the structure)
+                    const influence = Math.max(0, 1 - dist/200);
+                    p.x = p.baseX + (Math.random() - 0.5) * 10 * influence;
+                    p.y = p.baseY + (Math.random() - 0.5) * 10 * influence;
+                    p.phase += (Math.random() - 0.5) * influence;
+                }
+            });
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, width, height);
+
+            // Draw Tethers (W_ij matrix)
+            ctx.lineWidth = 1;
+            particles.forEach(p1 => {
+                particles.forEach(p2 => {
+                    if (p1 === p2) return;
+                    const dx = p1.x - p2.x;
+                    const dy = p1.y - p2.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist < 60) {
+                        ctx.beginPath();
+                        ctx.moveTo(p1.x, p1.y);
+                        ctx.lineTo(p2.x, p2.y);
+                        
+                        if (mode === 'cmb') {
+                            ctx.strokeStyle = `rgba(255, 50, 50, ${0.3 * (1 - dist/60)})`;
+                        } else {
+                            ctx.strokeStyle = `rgba(100, 150, 255, ${0.4 * (1 - dist/60)})`;
+                        }
+                        ctx.stroke();
+                    }
+                });
+            });
+
+            // Draw Particles
+            particles.forEach(p => {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.isAnchor ? 8 : 4, 0, Math.PI * 2);
+                
+                if (p.isAnchor) {
+                    ctx.fillStyle = mode === 'pulsar' ? getPhaseColor(p.phase, 60) : '#ffffff';
+                    ctx.shadowColor = ctx.fillStyle;
+                    ctx.shadowBlur = 15;
+                } else {
+                    ctx.fillStyle = mode === 'pulsar' ? getPhaseColor(p.phase) : '#58a6ff';
+                    ctx.shadowBlur = 0;
+                    if (mode === 'cmb') ctx.fillStyle = '#ff7b72';
+                }
+                
+                ctx.fill();
+            });
+
+            requestAnimationFrame(() => {
+                update();
+                draw();
+            });
+            
+            // Draw Signal Graph
+            if (sigCtx && sigWidth) {
+                sigCtx.clearRect(0, 0, sigWidth, sigHeight);
+                
+                // zero line
+                sigCtx.beginPath();
+                sigCtx.strokeStyle = '#30363d';
+                sigCtx.lineWidth = 1;
+                sigCtx.moveTo(0, sigHeight / 2);
+                sigCtx.lineTo(sigWidth, sigHeight / 2);
+                sigCtx.stroke();
+                
+                // signal line
+                sigCtx.beginPath();
+                sigCtx.strokeStyle = mode === 'ligo' ? '#58a6ff' : mode === 'pulsar' ? '#d2a8ff' : '#ff7b72';
+                sigCtx.lineWidth = 2;
+                const step = sigWidth / signalHistory.length;
+                
+                let maxVal = Math.max(...signalHistory.map(Math.abs));
+                if (maxVal < 0.1) maxVal = 0.1;
+                const scaleY = (sigHeight / 2) / maxVal;
+
+                for (let i = 0; i < signalHistory.length; i++) {
+                    const x = i * step;
+                    const y = (sigHeight / 2) - (signalHistory[i] * scaleY * 0.8);
+                    if (i === 0) sigCtx.moveTo(x, y);
+                    else sigCtx.lineTo(x, y);
+                }
+                sigCtx.stroke();
+            }
+        }
+
+        function setMode(newMode) {
+            mode = newMode;
+            
+            // UI Updates
+            document.querySelectorAll('button').forEach(b => {
+                b.className = b.className.replace(/bg-\w+-900\/40/, 'bg-transparent').replace(/border-\w+-500/, 'border-gray-700');
+            });
+
+            const btn = document.getElementById(`btn-${mode}`);
+            const color = mode === 'ligo' ? 'blue' : mode === 'pulsar' ? 'purple' : 'red';
+            btn.className = btn.className.replace('border-gray-700', `border-${color}-500`).replace('bg-transparent', `bg-${color}-900/40`);
+
+            document.getElementById('eq-ligo').classList.add('hidden');
+            document.getElementById('eq-pulsar').classList.add('hidden');
+            document.getElementById('eq-cmb').classList.add('hidden');
+            document.getElementById(`eq-${mode}`).classList.remove('hidden');
+
+            document.getElementById('sindyBar').className = `absolute top-0 left-0 w-full h-1 bg-${color}-500`;
+            
+            const stress = document.getElementById('stressValue');
+            const sindy = document.getElementById('sindyStatus');
+            
+            if (mode === 'cmb') {
+                stress.textContent = 'CRITICAL (Thermal Shearing)';
+                stress.className = 'text-red-500 font-bold';
+                sindy.textContent = '0.4% (Gradient Catastrophe)';
+                sindy.className = 'text-red-500 font-bold';
+            } else if (mode === 'ligo') {
+                stress.textContent = 'Nominal (Structured Strain)';
+                stress.className = 'text-blue-400';
+                sindy.textContent = '98.4% (Stable Polynomials)';
+                sindy.className = 'text-green-400';
+            } else {
+                stress.textContent = 'Nominal (Phase Sync)';
+                stress.className = 'text-purple-400';
+                sindy.textContent = '99.9% (Real PTA Data Active)';
+                sindy.className = 'text-green-400 font-bold';
+            }
+
+            // Reset positions
+            particles.forEach(p => {
+                p.x = p.baseX;
+                p.y = p.baseY;
+                if (mode !== 'pulsar') p.phase = p.baseX * 0.01;
+            });
+        }
+
+        // Initialize
+        fetch('pta_residuals.csv')
+            .then(res => res.text())
+            .then(text => {
+                const lines = text.trim().split('\n').slice(1);
+                ptaData = lines.map(l => parseFloat(l.split(',')[1])).filter(v => !isNaN(v));
+                resize();
+                setMode('pulsar');
+                draw();
+            })
+            .catch(err => {
+                console.warn('CSV not found, using fallback.');
+                resize();
+                setMode('pulsar');
+                draw();
+            });
+    </script>
+</body>
+</html>

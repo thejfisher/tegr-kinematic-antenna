@@ -1,0 +1,6 @@
+@echo off
+echo Launching Matrix B Macro-Node Engine...
+echo Please wait while the Meta-SINDy models are trained from your data...
+cd /d Z:\teleparallel_sim
+python matrix_b_sim.py
+pause

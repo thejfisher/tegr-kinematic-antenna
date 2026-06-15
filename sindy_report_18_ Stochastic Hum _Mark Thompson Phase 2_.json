@@ -1,0 +1,13 @@
+{
+    "run_label": "18. Stochastic Hum (Mark Thompson Phase 2)",
+    "equations": {
+        "vx'": "-281.820 1 +  23.644 x +  3.267 y +  248.468 z +  96.434 r +  0.737 hue + -281.695 gamma + -281.820 m0 + -4.364 1/r^3 +  0.240 sin(hue) + -0.271 cos(hue) + -281.946 m0/gamma + -274.177 F_pauli_x +  79.625 F_pauli_y +  1.509 F_pauli_z + -2.937 F_torsion",
+        "vy'": "-89.570 1 +  5.523 x + -0.141 y +  78.608 z +  33.069 r +  0.243 hue + -89.532 gamma + -89.570 m0 + -1.381 1/r^3 + -0.258 sin(hue) + -0.027 cos(hue) + -89.608 m0/gamma + -18.922 F_pauli_x +  27.228 F_pauli_y + -15.934 F_pauli_z + -6.035 F_torsion",
+        "vz'": " 66.151 1 + -5.303 x + -1.178 y + -54.213 z + -27.150 r + -0.175 hue +  66.123 gamma +  66.151 m0 +  1.050 1/r^3 + -0.279 sin(hue) +  0.328 cos(hue) +  66.180 m0/gamma +  89.234 F_pauli_x + -96.815 F_pauli_y + -64.576 F_pauli_z +  7.851 F_torsion",
+        "r''": " 118.954 1 + -9.037 x + -2.393 y + -90.825 z + -55.254 r + -0.315 hue +  118.907 gamma +  118.954 m0 +  1.916 1/r^3 + -0.138 sin(hue) +  0.311 cos(hue) +  119.000 m0/gamma +  88.864 F_pauli_x + -117.229 F_pauli_y + -55.079 F_pauli_z +  10.198 F_torsion",
+        "hue'": "-641.632 1 + -0.037 x + -0.002 y +  0.057 z +  0.054 r + -641.469 gamma + -641.632 m0 + -11.080 1/r^3 + -641.794 m0/gamma +  0.006 F_pauli_x + -0.020 F_pauli_y + -0.005 F_pauli_z +  0.002 F_torsion",
+        "gamma'": "-0.014 F_pauli_x",
+        "m0'": " 0.000"
+    },
+    "r2_score": 0.3821219249579166
+}

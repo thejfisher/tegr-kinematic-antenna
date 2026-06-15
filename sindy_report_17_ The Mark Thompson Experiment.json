@@ -1,0 +1,13 @@
+{
+    "run_label": "17. The Mark Thompson Experiment",
+    "equations": {
+        "vx'": " 115.975 1 + -15.986 x + -122.253 y + -6479.067 z +  6531.645 r + -750.622 hue + -24773.737 gamma +  115.975 m0 +  6035.106 1/r^3 + -81.432 sin(hue) +  135.461 cos(hue) +  24488.717 m0/gamma + -2.452 K_sync +  7826.597 F_pauli_x + -5151.510 F_pauli_y + -5246.404 F_pauli_z +  2.313 F_torsion",
+        "vy'": " 87.957 1 +  18.083 x + -90.232 y + -5489.324 z +  5517.189 r + -366.921 hue + -20989.028 gamma +  87.957 m0 +  5137.958 1/r^3 + -59.240 sin(hue) +  137.321 cos(hue) +  20725.816 m0/gamma + -4.885 K_sync +  4884.772 F_pauli_x + -2175.774 F_pauli_y + -3829.581 F_pauli_z +  11.487 F_torsion",
+        "vz'": "-44.865 1 +  28.307 x +  101.904 y +  6486.920 z + -6540.119 r +  773.662 hue +  16863.051 gamma + -44.865 m0 + -4226.561 1/r^3 +  77.340 sin(hue) + -131.030 cos(hue) + -16601.739 m0/gamma +  11.304 K_sync + -3885.099 F_pauli_x +  2956.824 F_pauli_y +  5540.890 F_pauli_z +  24.461 F_torsion",
+        "r''": "-98.900 1 +  24.738 x +  138.570 y +  8282.429 z + -8346.711 r +  922.370 hue +  26028.033 gamma + -98.900 m0 + -6415.159 1/r^3 +  97.235 sin(hue) + -173.514 cos(hue) + -25682.873 m0/gamma +  12.088 K_sync + -6389.225 F_pauli_x +  4756.840 F_pauli_y +  7148.982 F_pauli_z +  19.167 F_torsion",
+        "hue'": " 2.539 1 +  0.022 z + -0.021 r + -0.014 hue + -2.977 gamma +  2.539 m0 + -0.828 1/r^3 + -0.006 sin(hue) + -0.001 cos(hue) +  7.914 m0/gamma +  0.003 K_sync +  0.058 F_pauli_x + -0.015 F_pauli_y +  0.009 F_pauli_z",
+        "gamma'": "-0.043 1 +  0.032 x + -0.217 z +  0.204 r +  0.228 hue +  1.016 gamma + -0.043 m0 + -0.222 1/r^3 +  0.012 sin(hue) +  0.027 cos(hue) + -1.080 m0/gamma + -0.021 F_pauli_x +  0.529 F_pauli_y +  1.667 F_pauli_z + -0.073 F_torsion",
+        "m0'": " 0.000"
+    },
+    "r2_score": 0.8280496351362538
+}
