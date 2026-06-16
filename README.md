@@ -2,6 +2,8 @@
 
 This repository contains the complete Python implementation of the Teleparallel Equivalent of General Relativity (TEGR) continuous engine, including the Kinematic Antenna array simulation, the Pulsar Timing Array (PTA) stochastic noise injector, and the co-rotating PySINDy extraction pipeline.
 
+For those unable to get their hands on a local machine that can run this code, I included an excel spreadsheet to help check the math and logic TEGR_10x10_Matrix_WORKING.xlsx
+
 ## Overview
 This engine computationally validates the LISA mission's ability to extract the Milky Way's stochastic background Doppler shift (the "lopsided" galactic spin) by isolating the topological phase dimension from spatial thermodynamic noise.
 
