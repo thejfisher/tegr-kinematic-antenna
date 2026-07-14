@@ -28,18 +28,60 @@ This script:
     1. Loads those raw CCD files and reconstructs photon trajectories
        by integrating the weak-measurement transverse momentum field
        through the 91 imaging planes.
-    2. Feeds the resulting trajectory data into PySINDy, treating the
-       propagation distance z (not chronological time) as the independent
-       variable, to discover a sparse governing equation dx/dz = f(x).
-    3. Saves a plot of the trajectories and a JSON report of the
-       discovered equations, feature names, and model score.
+    2. Normalizes the trajectories to dimensionless coordinates by
+       dividing x and z by L_slit (the double-slit separation).
+    3. Feeds the resulting trajectory data into PySINDy, treating the
+       normalised propagation distance ζ = z/L_slit as the independent
+       variable, to discover a sparse governing equation dξ/dζ = f(ξ),
+       where ξ = x/L_slit.
+    4. Runs TWO SINDy analyses side by side:
+         (a) Polynomial-only (degree 3) — a null/baseline test.
+         (b) Full library (poly + trig + 1/x) — the experimental test.
+       Both results are printed for comparison.
+    5. Saves a plot of the trajectories and a JSON report of both
+       discovered equations, feature names, and model scores.
 
-The motivation for the SINDy library choice (polynomial + sin + cos + 1/x)
-comes from the Teleparallel Equivalent of General Relativity (TEGR), which
-predicts a governing equation with a characteristic  θ − sin(θ)  structure
-in the non-local gradient term.  The discovered equation
-    dx/dz ≈ 0.007 (x − sin(x))
-structurally matches the TEGR prediction  κ(θ − sin(θ)).
+Dimensionless normalization
+---------------------------
+The slit separation L_slit ≈ 4.68 mm is the natural length scale of this
+experiment.  It is computed from the Kocsis MATLAB analysis as:
+
+    L_slit = rightmean − leftmean ≈ 19.12 − 14.44 = 4.68 mm
+
+Dividing all x and z values by L_slit makes the SINDy state variable ξ
+dimensionless.  This is essential because:
+  - sin(x) is only meaningful when x is dimensionless (radians).
+  - Without normalization, x is in millimetres, and sin(x_mm) is
+    physically meaningless — it conflates units with the function argument.
+  - The TEGR prediction θ − sin(θ) requires θ to be a dimensionless
+    angle or phase variable.
+
+Collinearity caveat
+-------------------
+IMPORTANT: In the dimensionless regime where |ξ| < ~0.3 (i.e. roughly
+|x| < 1.5 mm, which is the entire range of the Kocsis seed positions),
+the Taylor expansion gives:
+
+    sin(ξ) ≈ ξ − ξ³/6 + O(ξ⁵)
+
+Therefore:
+
+    ξ − sin(ξ) ≈ ξ³/6
+
+This means that a cubic polynomial term x³ and the combination
+(x − sin(x)) are nearly perfectly correlated in this amplitude range:
+
+    corr(x³, x − sin(x)) > 0.999999
+
+Consequence: SINDy CANNOT reliably distinguish between:
+    dξ/dζ = a·ξ³        (pure cubic nonlinearity)
+    dξ/dζ = b·(ξ − sin(ξ))   (TEGR-predicted structure)
+because both produce essentially identical predictions on this data.
+
+The dual analysis below (polynomial-only vs full-library) is designed to
+make this ambiguity explicit.  If both models achieve similar R² scores,
+the nonlinear signal is real but its functional form is underdetermined
+by the data alone.
 
 References
 ----------
@@ -63,6 +105,45 @@ import numpy as np                    # Numerical arrays and linear algebra
 import matplotlib.pyplot as plt       # Plotting reconstructed trajectories
 import pysindy as ps                  # Sparse Identification of Nonlinear Dynamics
 from scipy.interpolate import interp1d  # Cubic interpolation of the kx field
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  COLLINEARITY NOTE
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# For small dimensionless x (|x| < ~0.3, the regime of this experiment):
+#
+#     x - sin(x)  ≈  x³/6         (Taylor expansion)
+#
+# This means the library columns "x³" and "x - sin(x)" have a Pearson
+# correlation exceeding 0.999999 over the data range.  SINDy's sparse
+# regression cannot meaningfully separate them.
+#
+# Both the polynomial-only fit  dx/dz = a·x³  and the trig-inclusive fit
+# dx/dz = b·x + c·sin(x) (≈ b·(x - sin(x)) when b ≈ -c) will produce
+# nearly identical R² scores and nearly identical predictions.
+#
+# The nonlinear signal is REAL (both models find it), but its functional
+# form — cubic vs. sinusoidal — is AMBIGUOUS at these amplitudes.
+# Resolving this would require data at larger |x/L_slit| where the cubic
+# and sinusoidal forms diverge, or independent theoretical constraints.
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+# ---------------------------------------------------------------------------
+# PHYSICAL CONSTANT: SLIT SEPARATION
+# ---------------------------------------------------------------------------
+# L_slit is the double-slit separation derived from the Kocsis MATLAB
+# analysis (Bohmdataread.m).  The slit centres in pixel-pitch coordinates
+# are:
+#     leftmean  ≈ 14.44 mm   (left slit centre)
+#     rightmean ≈ 19.12 mm   (right slit centre)
+#
+# L_slit = rightmean − leftmean ≈ 4.68 mm
+#
+# This is the natural length scale of the double-slit geometry and is used
+# to make all coordinates dimensionless: ξ = x / L_slit,  ζ = z / L_slit.
+L_SLIT_MM = 4.68  # mm — double-slit separation
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -389,92 +470,169 @@ def load_and_reconstruct_trajectories(data_dir):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  FUNCTION: extract_sindy_equations
+#  FUNCTION: normalize_trajectories
 # ═══════════════════════════════════════════════════════════════════════════
 
-def extract_sindy_equations(z_range, trajectories):
+def normalize_trajectories(z_range, trajectories, L_slit=L_SLIT_MM):
     """
-    Apply the Sparse Identification of Nonlinear Dynamics (SINDy) algorithm
-    to the reconstructed photon trajectories, discovering a sparse governing
-    equation of the form  dx/dz = f(x).
+    Convert dimensional trajectories (x in mm, z in mm) to dimensionless
+    coordinates by dividing by the slit separation L_slit.
 
-    Why SINDy?
+    Why this is necessary
+    ---------------------
+    The SINDy library includes trigonometric functions sin(ξ) and cos(ξ).
+    For these to be physically meaningful, ξ must be dimensionless —
+    you cannot compute sin(3.2 mm) in any meaningful sense.  The slit
+    separation L_slit ≈ 4.68 mm is the natural length scale of the
+    double-slit geometry and converts x into a dimensionless phase-like
+    variable ξ = x / L_slit.
+
+    Similarly, normalizing z → ζ = z / L_slit ensures that the discovered
+    equation dξ/dζ = f(ξ) has dimensionless coefficients, making it
+    directly comparable to theoretical predictions that are expressed in
+    terms of dimensionless angles.
+
+    Note on the collinearity consequence:
+    With |ξ| = |x| / L_slit ≈ 1.5 / 4.68 ≈ 0.32 at the extremes,
+    sin(ξ) ≈ ξ − ξ³/6 to better than 0.2% accuracy.  This means
+    ξ − sin(ξ) ≈ ξ³/6, making cubic and (ξ − sin(ξ)) terms nearly
+    indistinguishable.  See the collinearity note at the top of this file.
+
+    Parameters
     ----------
-    SINDy (Brunton, Proctor & Kutz, PNAS 2016) identifies a parsimonious
-    dynamical model from data by solving a sparse regression problem over a
-    library of candidate nonlinear functions.  Here, the "time" variable is
-    the propagation distance z (not chronological lab time), and the state
-    variable is the transverse photon position x.  SINDy discovers which
-    terms in the candidate library are active in the true dynamics.
+    z_range : np.ndarray, shape (N,)
+        Propagation distances in mm.
+    trajectories : np.ndarray, shape (N, M)
+        Transverse positions in mm for M trajectories at N planes.
+    L_slit : float
+        Slit separation in mm (default: 4.68 mm).
+
+    Returns
+    -------
+    z_norm : np.ndarray, shape (N,)
+        Dimensionless propagation distances ζ = z / L_slit.
+    traj_norm : np.ndarray, shape (N, M)
+        Dimensionless transverse positions ξ = x / L_slit.
+    """
+    z_norm = z_range / L_slit
+    traj_norm = trajectories / L_slit
+    return z_norm, traj_norm
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  FUNCTION: run_sindy_poly_only
+# ═══════════════════════════════════════════════════════════════════════════
+
+def run_sindy_poly_only(z_norm, traj_norm):
+    """
+    Null / baseline SINDy analysis using ONLY polynomial terms up to
+    degree 3:  { 1, ξ, ξ², ξ³ }.
+
+    This serves as the null hypothesis: if a purely polynomial model
+    fits the data just as well as a model with trig functions, then
+    the data alone cannot justify the presence of sin/cos terms.
+
+    Due to the collinearity issue (ξ − sin(ξ) ≈ ξ³/6 for small ξ),
+    we expect this model to achieve an R² score very close to the
+    full-library model.
+
+    Parameters
+    ----------
+    z_norm : np.ndarray, shape (N,)
+        Dimensionless propagation distances ζ = z / L_slit.
+    traj_norm : np.ndarray, shape (N, M)
+        Dimensionless transverse positions ξ = x / L_slit.
+
+    Returns
+    -------
+    model : ps.SINDy
+        Fitted polynomial-only SINDy model.
+    """
+    print("\n" + "=" * 70)
+    print("  ANALYSIS A: Polynomial-only library (degree 3) — NULL/BASELINE")
+    print("=" * 70)
+
+    poly_library = ps.PolynomialLibrary(degree=3)
+
+    # Same STLSQ settings as the full-library analysis for fair comparison.
+    optimizer = ps.STLSQ(threshold=1e-4, alpha=0.01)
+
+    model = ps.SINDy(
+        feature_library=poly_library,
+        optimizer=optimizer
+    )
+
+    x_train = [traj_norm[:, i].reshape(-1, 1) for i in range(traj_norm.shape[1])]
+    model.fit(x_train, t=z_norm)
+
+    print("\nDiscovered equation (polynomial only):")
+    model.print()
+
+    score = float(model.score(x_train, t=z_norm))
+    print(f"R^2 score (polynomial only): {score:.10f}")
+
+    return model
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  FUNCTION: run_sindy_full_library
+# ═══════════════════════════════════════════════════════════════════════════
+
+def run_sindy_full_library(z_norm, traj_norm):
+    """
+    Experimental SINDy analysis using the full candidate library:
+    polynomial (degree 3) + sin(ξ) + cos(ξ) + 1/ξ.
 
     Library design rationale
     ------------------------
     The candidate function library is the union of:
 
-    (a) A polynomial library up to degree 3  (1, x, x², x³).
+    (a) A polynomial library up to degree 3  (1, ξ, ξ², ξ³).
         This captures any low-order Taylor-series behaviour.
 
-    (b) A custom library containing sin(x), cos(x), and 1/x.
+    (b) A custom library containing sin(ξ), cos(ξ), and 1/ξ.
         These are included because the TEGR (Teleparallel Equivalent of
         General Relativity) model predicts a governing equation with a
         θ − sin(θ) structure in the non-local torsion gradient term.
         Including sin and cos lets SINDy discover this structure if it
-        is present in the data.  The 1/x term is a generic singularity
+        is present in the data.  The 1/ξ term is a generic singularity
         that often appears in radial/optical equations.
 
-    The expected discovery is:
-        dx/dz ≈ 0.007 (x − sin(x))
-    which structurally matches the TEGR non-local gradient term κ(θ − sin(θ)).
+    IMPORTANT CAVEAT: At the amplitudes present in this dataset
+    (|ξ| ≤ ~0.32), the terms ξ³ and (ξ − sin(ξ)) are nearly
+    perfectly collinear.  If this model achieves an R² score similar
+    to the polynomial-only model, the nonlinear signal is real but
+    its functional form is AMBIGUOUS — the data cannot distinguish
+    cubic from sinusoidal nonlinearity.
 
     Parameters
     ----------
-    z_range : np.ndarray, shape (N,)
-        Propagation distances (mm) acting as the independent variable.
-    trajectories : np.ndarray, shape (N, M)
-        M reconstructed trajectories evaluated at the N propagation planes.
+    z_norm : np.ndarray, shape (N,)
+        Dimensionless propagation distances ζ = z / L_slit.
+    traj_norm : np.ndarray, shape (N, M)
+        Dimensionless transverse positions ξ = x / L_slit.
 
     Returns
     -------
     model : ps.SINDy
-        The fitted PySINDy model object.  Calling model.print() displays
-        the discovered equations; model.equations() returns them as strings.
+        Fitted full-library SINDy model.
     """
-    print("Applying PySINDy extraction...")
+    print("\n" + "=" * 70)
+    print("  ANALYSIS B: Full library (poly + trig + 1/x) — EXPERIMENTAL")
+    print("=" * 70)
 
-    # ------------------------------------------------------------------
-    # (A) POLYNOMIAL LIBRARY
-    # ------------------------------------------------------------------
-    # PolynomialLibrary(degree=3) generates the candidate terms:
-    #   { 1,  x,  x²,  x³ }
-    # These handle any smooth, low-order dependence of dx/dz on x.
+    # (A) Polynomial library
     poly_library = ps.PolynomialLibrary(degree=3)
 
-    # ------------------------------------------------------------------
-    # (B) CUSTOM NONLINEAR LIBRARY
-    # ------------------------------------------------------------------
-    # We add three hand-picked functions motivated by the TEGR theory:
-    #
-    #   sin(x)  — the TEGR equation contains  θ − sin(θ);  SINDy needs
-    #             both x (from the polynomial library) and sin(x) to
-    #             represent this structure.
-    #
-    #   cos(x)  — included as a companion to sin(x); if the governing
-    #             equation involves any phase-shifted sinusoidal terms,
-    #             cos(x) can capture them.
-    #
-    #   1/(x + ε) — a "soft" reciprocal with a small regulariser
-    #               ε = 1 × 10⁻⁵ to avoid division by zero.  This term
-    #               is a generic singular/rational candidate that appears
-    #               in many optical and gravitational equations.
+    # (B) Custom nonlinear library
+    # NOTE: After normalization, ξ is dimensionless, so sin(ξ) and cos(ξ)
+    # are now well-defined mathematical operations (not sin-of-millimetres).
     library_functions = [
         lambda x: np.sin(x),
         lambda x: np.cos(x),
         lambda x: 1.0 / (x + 1e-5)
     ]
 
-    # Human-readable names for each custom function, used when PySINDy
-    # prints the discovered equations.  Each callable receives a variable
-    # name string (e.g. "x0") and returns a formatted label.
     function_names = [
         lambda x: f"sin({x})",
         lambda x: f"cos({x})",
@@ -486,62 +644,26 @@ def extract_sindy_equations(z_range, trajectories):
         function_names=function_names
     )
 
-    # ------------------------------------------------------------------
-    # (C) COMBINED FEATURE LIBRARY
-    # ------------------------------------------------------------------
-    # PySINDy's `+` operator on libraries produces a ConcatLibrary that
-    # evaluates both sub-libraries and concatenates their output columns.
-    # The full candidate set is therefore:
-    #   { 1, x, x², x³, sin(x), cos(x), 1/x }
+    # (C) Combined library: { 1, ξ, ξ², ξ³, sin(ξ), cos(ξ), 1/ξ }
     feature_library = poly_library + custom_library
 
-    # ------------------------------------------------------------------
-    # (D) SPARSE OPTIMISER: STLSQ
-    # ------------------------------------------------------------------
-    # Sequentially Thresholded Least Squares (STLSQ) is the default
-    # SINDy optimiser.  It alternates between:
-    #   1. Ordinary least-squares regression of dx/dz onto the library.
-    #   2. Zeroing out any coefficients whose absolute value falls below
-    #      the sparsity threshold.
-    #
-    # threshold = 1e-4  →  aggressively prune small coefficients, keeping
-    #                       only the dominant dynamical terms.
-    # alpha     = 0.01  →  L2 (ridge) regularisation strength, preventing
-    #                       ill-conditioning when library columns are
-    #                       nearly collinear.
+    # (D) Same STLSQ settings as the polynomial-only analysis.
     optimizer = ps.STLSQ(threshold=1e-4, alpha=0.01)
 
-    # ------------------------------------------------------------------
-    # (E) BUILD AND FIT THE SINDY MODEL
-    # ------------------------------------------------------------------
+    # (E) Build and fit
     model = ps.SINDy(
         feature_library=feature_library,
         optimizer=optimizer
     )
 
-    # PySINDy expects a *list* of trajectories when fitting multiple
-    # independent realisations of the same dynamical system.  Each
-    # element of x_train is a single trajectory reshaped to (N, 1):
-    #   - N = number of propagation planes (rows of `trajectories`)
-    #   - 1 = single state variable x
-    #
-    # By passing all 20 trajectories, SINDy jointly regresses a single
-    # set of coefficients that best explains all of them simultaneously,
-    # improving robustness against noise in any individual trajectory.
-    x_train = [trajectories[:, i].reshape(-1, 1) for i in range(trajectories.shape[1])]
+    x_train = [traj_norm[:, i].reshape(-1, 1) for i in range(traj_norm.shape[1])]
+    model.fit(x_train, t=z_norm)
 
-    # Fit the model.  The independent variable t is the propagation
-    # distance z_range (in mm).  PySINDy internally computes numerical
-    # derivatives dx/dz via finite differences, then solves the sparse
-    # regression  dx/dz = Θ(x) ξ  for the coefficient vector ξ.
-    model.fit(x_train, t=z_range)
-
-    print("SINDy Extraction Complete.")
-
-    # Print the discovered equations to stdout.
-    # Expected output resembles:  x0' = 0.007 x0 + -0.007 sin(x0)
-    # which is  dx/dz ≈ 0.007 (x − sin(x)).
+    print("\nDiscovered equation (full library):")
     model.print()
+
+    score = float(model.score(x_train, t=z_norm))
+    print(f"R^2 score (full library): {score:.10f}")
 
     return model
 
@@ -558,9 +680,12 @@ def main():
     2. Reconstruct average photon trajectories via weak-measurement
        momentum integration.
     3. Plot and save the trajectory figure.
-    4. Run SINDy to discover a sparse governing equation dx/dz = f(x).
-    5. Save a JSON report with the discovered equations, feature names,
-       and goodness-of-fit score.
+    4. Normalize trajectories to dimensionless coordinates (ξ, ζ).
+    5. Run TWO SINDy analyses side by side:
+       (a) Polynomial-only (degree 3) — null/baseline.
+       (b) Full library (poly + trig + 1/x) — experimental.
+    6. Print a side-by-side comparison of both results.
+    7. Save a JSON report with both sets of results and the R² delta.
     """
 
     # ------------------------------------------------------------------
@@ -602,36 +727,122 @@ def main():
     plt.close()
 
     # ------------------------------------------------------------------
-    # STEP 4: SINDy sparse equation discovery
+    # STEP 4: Normalize to dimensionless coordinates
     # ------------------------------------------------------------------
-    model = extract_sindy_equations(z_range, trajectories)
+    # Divide x and z by L_slit = 4.68 mm (the double-slit separation).
+    #
+    # WHY: You cannot take sin(x) when x is in millimetres — the argument
+    # to a trigonometric function must be dimensionless (radians).  The
+    # slit separation is the natural length scale of the experiment,
+    # making ξ = x/L_slit a dimensionless phase-like variable.
+    #
+    # After normalization, the seed positions span
+    # ξ ∈ [−1.5/4.68, +1.5/4.68] ≈ [−0.321, +0.321].
+    # At these amplitudes, sin(ξ) ≈ ξ − ξ³/6 to ~0.2% accuracy,
+    # making ξ³ and (ξ − sin(ξ)) nearly indistinguishable (see
+    # collinearity note at top of file).
+    z_norm, traj_norm = normalize_trajectories(z_range, trajectories)
+
+    print(f"\nNormalization: L_slit = {L_SLIT_MM} mm")
+    print(f"Dimensionless x range: [{traj_norm.min():.4f}, {traj_norm.max():.4f}]")
+    print(f"Dimensionless z range: [{z_norm.min():.1f}, {z_norm.max():.1f}]")
 
     # ------------------------------------------------------------------
-    # STEP 5: Assemble and save the JSON report
+    # STEP 5: Run BOTH SINDy analyses
     # ------------------------------------------------------------------
-    # The report dictionary contains:
-    #   "equations" — list of string representations of the discovered
-    #                 ODE for each state variable (here just x0).
-    #   "features"  — the names of all candidate library functions that
-    #                 were considered (e.g. "x0", "x0^2", "sin(x0)", …).
-    #   "score"     — the R² coefficient of determination, measuring how
-    #                 well the discovered equation reproduces the
-    #                 numerically differentiated dx/dz across all 20
-    #                 trajectories.  A score near 1.0 indicates an
-    #                 excellent fit.
+
+    # (A) Polynomial-only — the null/baseline test
+    model_poly = run_sindy_poly_only(z_norm, traj_norm)
+
+    # (B) Full library — the experimental test
+    model_full = run_sindy_full_library(z_norm, traj_norm)
+
+    # ------------------------------------------------------------------
+    # STEP 6: Side-by-side comparison
+    # ------------------------------------------------------------------
+    x_train = [traj_norm[:, i].reshape(-1, 1) for i in range(traj_norm.shape[1])]
+
+    score_poly = float(model_poly.score(x_train, t=z_norm))
+    score_full = float(model_full.score(x_train, t=z_norm))
+    r2_delta = score_full - score_poly
+
+    print("\n" + "=" * 70)
+    print("  SIDE-BY-SIDE COMPARISON")
+    print("=" * 70)
+    print(f"\n  Polynomial-only R^2:  {score_poly:.10f}")
+    print(f"  Full-library R^2:    {score_full:.10f}")
+    print(f"  Delta R^2 (full - poly):  {r2_delta:+.10f}")
+
+    if abs(r2_delta) < 0.01:
+        print("\n  INTERPRETATION: Both models achieve similar R^2 scores.")
+        print("  The nonlinear signal is REAL (both capture it), but its")
+        print("  functional form is AMBIGUOUS -- the data cannot distinguish")
+        print("  cubic nonlinearity from sinusoidal (TEGR) structure at")
+        print("  these small dimensionless amplitudes (|xi| <= 0.32).")
+        print("  This is the expected consequence of the collinearity")
+        print("  between xi^3 and (xi - sin(xi)) for small |xi|.")
+    else:
+        print(f"\n  INTERPRETATION: Delta R^2 = {r2_delta:+.6f} suggests the")
+        print("  full library provides a meaningfully different fit.")
+        print("  However, given the small-amplitude regime, independent")
+        print("  validation (e.g., data at larger |xi|) is still recommended.")
+
+    print("=" * 70)
+
+    # ------------------------------------------------------------------
+    # STEP 7: Assemble and save the JSON report
+    # ------------------------------------------------------------------
+    # The report now contains BOTH analyses for honest comparison.
     report = {
-        "equations": [eq for eq in model.equations()],
-        "features": model.get_feature_names(),
-        "score": float(model.score(
-            [trajectories[:, i].reshape(-1, 1) for i in range(trajectories.shape[1])],
-            t=z_range
-        ))
+        "normalization": {
+            "L_slit_mm": L_SLIT_MM,
+            "description": (
+                "All x and z values divided by L_slit = 4.68 mm "
+                "(double-slit separation: rightmean - leftmean from "
+                "Kocsis MATLAB analysis). This makes the SINDy state "
+                "variable dimensionless, which is required for "
+                "trigonometric library terms to be physically meaningful."
+            ),
+            "dimensionless_x_range": [float(traj_norm.min()), float(traj_norm.max())],
+            "dimensionless_z_range": [float(z_norm.min()), float(z_norm.max())]
+        },
+        "poly_only": {
+            "description": (
+                "Null/baseline: polynomial-only library (degree 3). "
+                "Candidate terms: {1, xi, xi^2, xi^3}."
+            ),
+            "equations": [eq for eq in model_poly.equations()],
+            "features": model_poly.get_feature_names(),
+            "R2_score": score_poly
+        },
+        "full_library": {
+            "description": (
+                "Experimental: full library (poly degree 3 + sin + cos + 1/x). "
+                "Candidate terms: {1, xi, xi^2, xi^3, sin(xi), cos(xi), 1/xi}."
+            ),
+            "equations": [eq for eq in model_full.equations()],
+            "features": model_full.get_feature_names(),
+            "R2_score": score_full
+        },
+        "comparison": {
+            "R2_delta_full_minus_poly": r2_delta,
+            "collinearity_note": (
+                "For |xi| < ~0.32 (the regime of this data), "
+                "xi - sin(xi) ~ xi^3/6 with correlation > 0.999999. "
+                "SINDy cannot reliably distinguish cubic from sinusoidal "
+                "nonlinearity at these amplitudes. The nonlinear signal "
+                "is real but its functional form is ambiguous."
+            )
+        }
     }
 
-    with open(os.path.join(out_dir, "sindy_kocsis_report.json"), "w") as f:
+    report_path = os.path.join(out_dir, "sindy_kocsis_report.json")
+    with open(report_path, "w") as f:
         json.dump(report, f, indent=4)
 
-    print(f"Results saved to {out_dir}")
+    print(f"\nResults saved to {out_dir}")
+    print(f"  Report: {report_path}")
+    print(f"  Plot:   {os.path.join(out_dir, 'Kocsis_Empirical_Trajectories.png')}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════

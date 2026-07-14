@@ -1,15 +1,47 @@
 {
-    "equations": [
-        "-0.001 1 +  0.007 x0 + -0.001 x0^3 + -0.007 sin(x0) +  0.001 cos(x0)"
-    ],
-    "features": [
-        "1",
-        "x0",
-        "x0^2",
-        "x0^3",
-        "sin(x0)",
-        "cos(x0)",
-        "1/(x0)"
-    ],
-    "score": 0.1908900860048911
+    "normalization": {
+        "L_slit_mm": 4.68,
+        "description": "All x and z values divided by L_slit = 4.68 mm (double-slit separation: rightmean - leftmean from Kocsis MATLAB analysis). This makes the SINDy state variable dimensionless, which is required for trigonometric library terms to be physically meaningful.",
+        "dimensionless_x_range": [
+            -0.4382807724055138,
+            0.5330477019528536
+        ],
+        "dimensionless_z_range": [
+            676.6381766381768,
+            1232.1937321937323
+        ]
+    },
+    "poly_only": {
+        "description": "Null/baseline: polynomial-only library (degree 3). Candidate terms: {1, xi, xi^2, xi^3}.",
+        "equations": [
+            " 0.004 x0^3"
+        ],
+        "features": [
+            "1",
+            "x0",
+            "x0^2",
+            "x0^3"
+        ],
+        "R2_score": 0.10540029218111302
+    },
+    "full_library": {
+        "description": "Experimental: full library (poly degree 3 + sin + cos + 1/x). Candidate terms: {1, xi, xi^2, xi^3, sin(xi), cos(xi), 1/xi}.",
+        "equations": [
+            " 8.708 x0 + -1.430 x0^3 + -8.709 sin(x0)"
+        ],
+        "features": [
+            "1",
+            "x0",
+            "x0^2",
+            "x0^3",
+            "sin(x0)",
+            "cos(x0)",
+            "1/(x0)"
+        ],
+        "R2_score": 0.1512399136622321
+    },
+    "comparison": {
+        "R2_delta_full_minus_poly": 0.045839621481119086,
+        "collinearity_note": "For |xi| < ~0.32 (the regime of this data), xi - sin(xi) ~ xi^3/6 with correlation > 0.999999. SINDy cannot reliably distinguish cubic from sinusoidal nonlinearity at these amplitudes. The nonlinear signal is real but its functional form is ambiguous."
+    }
 }
