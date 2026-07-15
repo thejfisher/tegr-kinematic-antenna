@@ -1,0 +1,13 @@
+{
+    "run_label": "6. Delayed Choice Quantum Eraser",
+    "equations": {
+        "vx'": "-0.165 1 + -0.084 m0 +  5.647 sin(hue) + -0.070 cos(hue) +  0.699 m0/gamma + -0.106 K_sync + -0.124 F_pauli_x + -0.233 F_pauli_y",
+        "vy'": " 5.306 sin(hue) + -0.100 K_sync +  0.139 F_pauli_x + -0.264 F_pauli_y",
+        "vz'": " 0.000",
+        "r''": " 0.120 1 +  0.062 m0 +  0.009 1/r^3 +  4.099 sin(hue) +  0.039 cos(hue) + -0.515 m0/gamma + -0.077 K_sync +  0.296 F_pauli_x + -0.377 F_pauli_y",
+        "hue'": " 0.501 m0/gamma",
+        "gamma'": "-13.603 1 + -6.956 m0 + -0.689 1/r^3 + -2303.394 sin(hue) + -0.379 cos(hue) +  34.828 m0/gamma +  43.520 K_sync + -300.934 F_pauli_x +  1080.334 F_pauli_y",
+        "m0'": " 0.000"
+    },
+    "r2_score": 0.33437128371327074
+}

@@ -14,7 +14,7 @@ if sys.stdout.encoding.lower() != 'utf-8':
 import csv
 import os
 
-def run_sindy_and_ollama(history, ai_url, ai_model, no_llm=False, run_label="default", galactic_spin=0.0):
+def run_sindy_and_ollama(history, ai_url, ai_model, no_llm=False, run_label="default", galactic_spin=0.0, dt=0.001):
     print(f"Data loaded from ZMQ Stream! Shape: {history.shape}")
     
     try:
@@ -30,8 +30,11 @@ def run_sindy_and_ollama(history, ai_url, ai_model, no_llm=False, run_label="def
         print("PyTorch not installed. Using standard DRAM numpy arrays.")
         device = "cpu"
 
-    # Track an anchor (index 0) if galactic_spin is enabled, else track the source
-    tracker_idx = 0 if galactic_spin > 0.0 else -1
+    # Always track beam particle (index 0) — the active resonant wave defect.
+    # In double-slit mode, index 0 = beam, indices 1..N = stationary wall.
+    # In 2-body mode, index 0 = source particle.
+    # galactic_spin mode also uses index 0 (anchor).
+    tracker_idx = 0
     
     m0_history = history[:, tracker_idx, 7]
     mass_diffs = np.abs(np.diff(m0_history))
@@ -58,7 +61,7 @@ def run_sindy_and_ollama(history, ai_url, ai_model, no_llm=False, run_label="def
     m0 = history[:, tracker_idx, 7]
     hue = np.unwrap(history[:, tracker_idx, 8])
     
-    dt = 0.001
+    # dt is received as function parameter from collider via ZMQ
     N_ticks = len(x_raw)
     t = np.arange(N_ticks) * dt
     
@@ -100,7 +103,9 @@ def run_sindy_and_ollama(history, ai_url, ai_model, no_llm=False, run_label="def
     vz = pz / (gamma * m0)
     r_dot = (x * vx + y * vy + z * vz) / (r + 1e-6)
     
-    dt = 0.001
+    # dt is now received from the collider via ZMQ DONE message.
+    # Fallback to 0.001 if not provided (legacy compatibility).
+    print(f"Using dt = {dt} for finite difference computation.")
     fd = ps.FiniteDifference()
     
     internal_vars = np.column_stack((hue, gamma, m0))
@@ -285,26 +290,34 @@ def run_sindy_and_ollama(history, ai_url, ai_model, no_llm=False, run_label="def
     
     equations = [eq for eq in model.equations()]
     lhs = ["vx'", "vy'", "vz'", "r''", "hue'", "gamma'", "m0'"]
-    raw_math = "\n".join([f"{lhs[i]} = {eq}" for i, eq in enumerate(equations)])
-    
-    # Calculate R^2 score
+    # Calculate R^2 scores per variable
     try:
-        r2_score = model.score(X_features, t=dt, x_dot=X_targets)
+        from sklearn.metrics import r2_score as sklearn_r2
+        predictions = model.predict(X_features)
+        r2_per_var = sklearn_r2(X_targets, predictions, multioutput='raw_values')
+        overall_r2 = model.score(X_features, t=dt, x_dot=X_targets)
     except Exception as e:
-        r2_score = 0.0
+        r2_per_var = [0.0] * len(lhs)
+        overall_r2 = 0.0
         print(f"Failed to compute R^2: {e}")
+
+    # Build the math string with per-variable R^2
+    formatted_eqs = []
+    for i, eq in enumerate(equations):
+        formatted_eqs.append(f"{lhs[i]} = {eq}   (R^2 = {r2_per_var[i]:.4f})")
+    raw_math = "\n\n".join(formatted_eqs)
         
     print("\n========================================")
     print("Cleaned Math Equations:")
     print(raw_math)
-    print(f"Overall R^2 Score: {r2_score:.4f}")
+    print(f"Overall R^2 Score: {overall_r2:.4f}")
     print("========================================\n")
     
     # Capture sindy_report
     sindy_report = {
         "run_label": run_label,
         "equations": dict(zip(lhs, equations)),
-        "r2_score": float(r2_score)
+        "r2_score": float(overall_r2)
     }
     
     safe_label = "".join([c if c.isalnum() or c in " _-" else "_" for c in run_label])
@@ -324,7 +337,7 @@ def run_sindy_and_ollama(history, ai_url, ai_model, no_llm=False, run_label="def
             writer = csv.writer(f)
             if not file_exists:
                 writer.writerow(["run_label", "r2_score", "vx'", "vy'", "vz'", "r''", "hue'", "gamma'", "m0'"])
-            writer.writerow([run_label, r2_score] + equations)
+            writer.writerow([run_label, overall_r2] + equations)
         print(f"[BUFFER] Saved extracted equations to {csv_file}")
     except Exception as e:
         print(f"Failed to write to CSV: {e}")
@@ -416,7 +429,9 @@ def main():
             data_chunk = message.get("data")
             chunks.append(data_chunk)
             total_frames += data_chunk.shape[0]
-            print(f"Received chunk of shape {data_chunk.shape}. Total frames buffered in RAM: {total_frames}")
+            if len(chunks) == 1 or len(chunks) % 100 == 0:
+                mem_mb = sum(c.nbytes for c in chunks) / (1024**2)
+                print(f"[BUFFER] Chunks: {len(chunks)} | Frames: {total_frames} | RAM: {mem_mb:.0f} MB | Latest shape: {data_chunk.shape}")
             
         elif status == "DONE":
             print("Received DONE signal. Stitching DRAM chunks together...")
@@ -428,8 +443,10 @@ def main():
             print(f"Full trajectory stitched in RAM. Final Shape: {full_history.shape}")
             
             run_label = message.get("run_label", "default")
+            actual_dt = message.get("dt", 0.001)
+            print(f"[PIPELINE] Received dt = {actual_dt} from collider.")
             # Unleash SINDy
-            run_sindy_and_ollama(full_history, args.ai_url, args.ai_model, args.no_llm, run_label=run_label, galactic_spin=args.galactic_spin)
+            run_sindy_and_ollama(full_history, args.ai_url, args.ai_model, args.no_llm, run_label=run_label, galactic_spin=args.galactic_spin, dt=actual_dt)
             
             print("\nSINDy extraction complete.")
             if not args.persistent:

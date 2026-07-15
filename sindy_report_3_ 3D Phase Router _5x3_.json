@@ -1,0 +1,13 @@
+{
+    "run_label": "3. 3D Phase Router (5x3)",
+    "equations": {
+        "vx'": "-77.618 1 + -0.083 x + -0.049 y +  0.040 z +  0.319 r +  0.018 hue +  0.079 gamma + -39.663 m0 + -209.078 1/r^3 + -13.385 cos(hue) +  202.537 m0/gamma + -0.004 K_sync +  474.767 F_pauli_x +  105.704 F_pauli_y +  68.309 F_pauli_z + -1.372 F_torsion",
+        "vy'": "-15.118 1 + -0.025 x + -0.277 y + -0.056 z + -0.027 r +  0.037 hue +  0.178 gamma + -7.725 m0 +  2.658 1/r^3 +  0.199 cos(hue) +  39.420 m0/gamma + -0.001 K_sync +  37.917 F_pauli_x +  319.962 F_pauli_y + -49.981 F_pauli_z + -0.656 F_torsion",
+        "vz'": "-3.465 1 + -0.046 y + -0.181 z +  0.044 gamma + -1.771 m0 +  0.312 1/r^3 +  0.126 cos(hue) +  8.239 m0/gamma + -0.008 K_sync + -61.027 F_pauli_x + -41.342 F_pauli_y +  303.838 F_pauli_z +  0.009 F_torsion",
+        "r''": " 85.641 1 + -0.273 x + -0.007 y + -0.040 z + -0.724 r +  0.084 hue + -0.028 gamma +  43.762 m0 +  113.105 1/r^3 +  5.192 cos(hue) + -182.365 m0/gamma + -0.005 K_sync + -16.311 F_pauli_x + -44.312 F_pauli_y +  121.699 F_pauli_z +  1.488 F_torsion",
+        "hue'": " 0.010 1 +  0.005 m0 + -0.011 sin(hue) + -0.005 cos(hue) +  0.881 m0/gamma +  0.006 F_pauli_x",
+        "gamma'": "-34.013 1 + -0.047 x + -0.418 y + -0.117 z +  0.119 hue +  0.220 gamma + -17.381 m0 + -16.516 1/r^3 + -0.128 cos(hue) +  67.251 m0/gamma + -0.005 K_sync + -70.691 F_pauli_x +  215.780 F_pauli_y +  291.116 F_pauli_z +  4.232 F_torsion",
+        "m0'": " 0.000"
+    },
+    "r2_score": 0.07339526439472115
+}

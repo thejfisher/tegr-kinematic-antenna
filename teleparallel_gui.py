@@ -1,6 +1,7 @@
 import sys
 import time
 import subprocess
+import shlex
 import json
 import numpy as np
 import pyqtgraph as pg
@@ -91,18 +92,60 @@ class PhysicsWorker(QThread):
                 args.extend(["--zmq_target", f"{buffer_ip}:{buffer_port}"])
                 
                 # Quote arguments for shell execution
-                args_str = " ".join([f"'{arg}'" if " " in arg else arg for arg in args])
+                args_str = " ".join([shlex.quote(arg) for arg in args])
                 physics_cmd = f"cd {physics_dir} && python3 -u teleparallel_collider.py {args_str}"
                 
                 ssh_physics_cmd = ["ssh", f"{physics_user}@{physics_ip}", physics_cmd]
                 self.log_signal.emit(f"Physics launch: {' '.join(ssh_physics_cmd)}")
                 physics_process = subprocess.Popen(ssh_physics_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace')
                 
-                for line in iter(physics_process.stdout.readline, ''):
-                    self.log_signal.emit("[PHYSICS] " + line.strip())
-                    # Windows SSH doesn't close stdout on remote exit - break on known final lines
-                    if "ZMQ Stream finished" in line or "Trajectory saved" in line:
+                # Use a thread-based reader to avoid Windows SSH readline hang.
+                # Windows SSH does NOT reliably close stdout when the remote process exits,
+                # so iter(readline, '') blocks forever. Instead, we use a queue + timeout.
+                import queue, threading
+                physics_q = queue.Queue()
+                def _physics_reader(proc, q):
+                    try:
+                        for line in iter(proc.stdout.readline, ''):
+                            q.put(line)
+                    except Exception:
+                        pass
+                    q.put(None)  # sentinel: EOF or pipe broken
+                
+                reader_thread = threading.Thread(target=_physics_reader, args=(physics_process, physics_q), daemon=True)
+                reader_thread.start()
+                
+                physics_done = False
+                INACTIVITY_TIMEOUT = 60  # seconds without output before checking if process died
+                while not physics_done:
+                    try:
+                        line = physics_q.get(timeout=INACTIVITY_TIMEOUT)
+                    except queue.Empty:
+                        # No output for INACTIVITY_TIMEOUT seconds — check if SSH process is still alive
+                        if physics_process.poll() is not None:
+                            self.log_signal.emit("[DEBUG] SSH physics process exited (returncode={})".format(physics_process.returncode))
+                            physics_done = True
+                            break
+                        self.log_signal.emit("[DEBUG] No physics output for {}s — process still alive, waiting...".format(INACTIVITY_TIMEOUT))
+                        continue
+                    
+                    if line is None:
+                        # EOF reached
+                        physics_done = True
                         break
+                    
+                    self.log_signal.emit("[PHYSICS] " + line.strip())
+                    # Break on known final-line markers
+                    if any(marker in line for marker in [
+                        "ZMQ Stream finished",
+                        "Trajectory saved",
+                        "Next step:",
+                        "[FATAL ERROR]",
+                        "Sending DONE signal",
+                    ]):
+                        physics_done = True
+                        break
+                
                 physics_process.stdout.close()
                 physics_process.terminate()
                 try:
@@ -114,17 +157,46 @@ class PhysicsWorker(QThread):
                 
                 self.log_signal.emit(">>> WAITING FOR BUFFER NODE SINDY EXTRACTION TO FINISH <<<")
                 
-                # Read server output with a timeout - server should exit after DONE processing
+                # Read server output using thread+queue to avoid Windows SSH readline hang
+                # (Same pattern as the physics reader above — blocking readline() hangs on Windows
+                # because SSH does not reliably close stdout when the remote process exits.)
                 import time as _time
+                buffer_q = queue.Queue()
+                def _buffer_reader(proc, q):
+                    try:
+                        for line in iter(proc.stdout.readline, ''):
+                            q.put(line)
+                    except Exception:
+                        pass
+                    q.put(None)  # sentinel: EOF or pipe broken
+                
+                buffer_thread = threading.Thread(target=_buffer_reader, args=(server_process, buffer_q), daemon=True)
+                buffer_thread.start()
+                
                 math_output = []
-                deadline = _time.time() + 120  # 2 minute max wait for SINDy
-                while _time.time() < deadline:
-                    line = server_process.stdout.readline()
-                    if line == '':
-                        break  # EOF - server exited
+                BUFFER_TIMEOUT = 120  # 2 minute max wait for SINDy
+                deadline = _time.time() + BUFFER_TIMEOUT
+                buffer_done = False
+                while not buffer_done and _time.time() < deadline:
+                    try:
+                        line = buffer_q.get(timeout=5)
+                    except queue.Empty:
+                        # No output for 5s — check if SSH process is still alive
+                        if server_process.poll() is not None:
+                            self.log_signal.emit("[DEBUG] SSH buffer process exited (returncode={})".format(server_process.returncode))
+                            buffer_done = True
+                            break
+                        continue
+                    
+                    if line is None:
+                        # EOF reached — server exited cleanly
+                        buffer_done = True
+                        break
+                    
                     self.log_signal.emit("[BUFFER] " + line.strip())
                     math_output.append(line)
-                else:
+                
+                if not buffer_done:
                     self.log_signal.emit("[DEBUG] Server timeout (120s). Killing server process.")
                     server_process.kill()
                 
@@ -138,10 +210,16 @@ class PhysicsWorker(QThread):
                 clean_math = ""
                 if "Cleaned Math Equations:" in math_text:
                     try:
-                        clean_math = math_text.split("Cleaned Math Equations:")[1].split("========================================")[0].strip()
-                        self.math_signal.emit(clean_math)
-                    except IndexError:
-                        pass
+                        parts = math_text.split("Cleaned Math Equations:")[1].split("========================================")
+                        clean_math = parts[0].strip() if len(parts) > 0 else math_text.split("Cleaned Math Equations:")[1].strip()
+                        if clean_math:
+                            self.math_signal.emit(clean_math)
+                        else:
+                            self.log_signal.emit("[GUI SINDy Parser] WARNING: clean_math was empty after parsing.")
+                    except Exception as e:
+                        self.log_signal.emit(f"[GUI SINDy Parser] ERROR: {e}")
+                else:
+                    self.log_signal.emit("[GUI SINDy Parser] ERROR: 'Cleaned Math Equations:' not found in ZMQ Server output. Server may have crashed.")
                 
                 # 3. If AI enabled, GUI sends HTTP POST to Ollama API
                 if ai_translation and ollama_url and clean_math:
@@ -209,8 +287,17 @@ class PhysicsWorker(QThread):
                 
                 math_text = "".join(math_output)
                 if "Cleaned Math Equations:" in math_text:
-                    clean_math = math_text.split("Cleaned Math Equations:")[1].split("Piping")[0].strip()
-                    self.math_signal.emit(clean_math)
+                    try:
+                        parts = math_text.split("Cleaned Math Equations:")[1].split("Piping")
+                        clean_math = parts[0].strip() if len(parts) > 0 else math_text.split("Cleaned Math Equations:")[1].strip()
+                        if clean_math:
+                            self.math_signal.emit(clean_math)
+                        else:
+                            self.log_signal.emit("[GUI SINDy Parser] WARNING: clean_math was empty after parsing local output.")
+                    except Exception as e:
+                        self.log_signal.emit(f"[GUI SINDy Parser] ERROR during local parsing: {e}")
+                else:
+                    self.log_signal.emit("[GUI SINDy Parser] ERROR: 'Cleaned Math Equations:' not found in local SINDy output! SINDy may have crashed or timed out.")
             
             self.finished_signal.emit()
             
@@ -361,7 +448,7 @@ class TeleparallelGUI(QMainWindow):
         self.preset_container = QWidget()
         preset_layout = QVBoxLayout(self.preset_container)
         self.preset_combo = QComboBox()
-        self.preset_combo.addItems(["0. Custom", "1. 1-Layer Classical Scatter", "2. 5-Layer Phase Router", "3. 3D Phase Router (5x3)", "4. AMPS Firewall (Gravity Sink)", "5. Direct Collapse (N-Body)", "6. Delayed Choice Quantum Eraser", "7. Delayed Choice (Heat Sink Eraser)", "8. Veneziano Amplitude (Soft Scattering)", "9. Photoelectric Effect", "10. Holographic Entanglement", "11. Holographic Shell (Dark Matter Void)", "12. Holographic Ring (Accretion Void)", "13. Quantum Electrodynamics (QED)", "14. Gravitational Wave (NANOGrav)", "15. GHZ Entanglement (Active Firewall)", "16. High-Gamma Test Preset", "17. The Mark Thompson Experiment", "18. Stochastic Hum (Mark Thompson Phase 2)"])
+        self.preset_combo.addItems(["0. Custom", "1. 1-Layer Classical Scatter", "2. 5-Layer Phase Router", "3. 3D Phase Router (5x3)", "4. AMPS Firewall (Gravity Sink)", "5. Direct Collapse (N-Body)", "6. Delayed Choice Quantum Eraser", "7. Delayed Choice (Heat Sink Eraser)", "8. Veneziano Amplitude (Soft Scattering)", "9. Photoelectric Effect", "10. Holographic Entanglement", "11. Holographic Shell (Dark Matter Void)", "12. Holographic Ring (Accretion Void)", "13. Quantum Electrodynamics (QED)", "14. Gravitational Wave (NANOGrav)", "15. GHZ Entanglement (Active Firewall)", "16. High-Gamma Test Preset", "17. The Mark Thompson Experiment", "18. Stochastic Hum (Mark Thompson Phase 2)", "19. Mass Sweep: Electron (0.511 MeV)", "20. Mass Sweep: Pion (134.98 MeV)", "21. Mass Sweep: Kaon (493.68 MeV)", "22. Mass Sweep: Proton (938.27 MeV)", "23. Mass Sweep: 4xProton (3753.05 MeV)", "24. Direct Collapse (N=10)", "25. Single-Slit Control", "26. Doubled Separation (d=12.0)", "27. Einstein's Stick (Classical)", "28. Einstein's Stick (Entangled)", "29. AdS-CFT Correspondence", "30. Pilot Wave (de Broglie-Bohm)", "31. Pilot Wave Double-Slit (Histogram)"])
         self.preset_combo.currentIndexChanged.connect(self.apply_preset)
         preset_layout.addWidget(self.preset_combo)
         preset_group_layout = QVBoxLayout()
@@ -392,6 +479,8 @@ class TeleparallelGUI(QMainWindow):
         add_input("vacuum", "0.001")
         add_input("torsion", "1.0")
         add_input("slit_width", "4.0")
+        add_input("slit_separation", "6.0")
+        add_input("num_slits", "2")
         add_input("wall_z_layers", "3")
         add_input("wall_depth", "5")
         add_input("entangled", "0")
@@ -416,6 +505,10 @@ class TeleparallelGUI(QMainWindow):
         self.firewall_active_cb = QCheckBox("AMPS Firewall Active (Shed Momentum)")
         self.firewall_active_cb.setChecked(False)
         form_layout.addRow(self.firewall_active_cb)
+
+        self.photon_emission_cb = QCheckBox("Continuous Photon Emission (Pilot Wave)")
+        self.photon_emission_cb.setChecked(False)
+        form_layout.addRow(self.photon_emission_cb)
         
         polarization_layout = QHBoxLayout()
         polarization_layout.addWidget(QLabel("Gravitational Polarization:"))
@@ -592,27 +685,29 @@ class TeleparallelGUI(QMainWindow):
             self.thermal_bath_cb.setChecked(False)
             self.inputs["mode"].setText("double-slit")
             self.inputs["num_particles"].setText("10000")
-            self.inputs["mass_a"].setText("1.0")
-            self.inputs["mass_b"].setText("1.0")
+            self.inputs["mass_a"].setText("0.511")
+            self.inputs["mass_b"].setText("0.511")
             self.inputs["pauli"].setText("500.0")
             self.inputs["vacuum"].setText("0.001")
             self.inputs["torsion"].setText("1.0")
             self.inputs["slit_width"].setText("4.0")
             self.inputs["wall_z_layers"].setText("1")
             self.inputs["wall_depth"].setText("1")
+            self.inputs["dt"].setText("0.02")
         elif text == "5-Layer Phase Router":
             self.paper1_exact_cb.setChecked(True)
             self.thermal_bath_cb.setChecked(False)
             self.inputs["mode"].setText("double-slit")
             self.inputs["num_particles"].setText("10000")
-            self.inputs["mass_a"].setText("1.0")
-            self.inputs["mass_b"].setText("1.0")
+            self.inputs["mass_a"].setText("0.511")
+            self.inputs["mass_b"].setText("0.511")
             self.inputs["pauli"].setText("500.0")
             self.inputs["vacuum"].setText("0.001")
             self.inputs["torsion"].setText("1.0")
             self.inputs["slit_width"].setText("4.0")
             self.inputs["wall_z_layers"].setText("1")
             self.inputs["wall_depth"].setText("5")
+            self.inputs["dt"].setText("0.02")
         elif text == "3D Phase Router (5x3)":
             self.paper1_exact_cb.setChecked(False)
             self.spin_coupling_cb.setChecked(True)
@@ -620,8 +715,8 @@ class TeleparallelGUI(QMainWindow):
             self.pauli_power_combo.setCurrentIndex(0)  # 1/r^3 Kaluza-Klein
             self.inputs["mode"].setText("double-slit")
             self.inputs["num_particles"].setText("10000")
-            self.inputs["mass_a"].setText("1.0")
-            self.inputs["mass_b"].setText("1.0")
+            self.inputs["mass_a"].setText("0.511")
+            self.inputs["mass_b"].setText("0.511")
             self.inputs["pauli"].setText("500.0")
             self.inputs["vacuum"].setText("0.001")
             self.inputs["torsion"].setText("1.0")
@@ -630,6 +725,7 @@ class TeleparallelGUI(QMainWindow):
             self.inputs["wall_depth"].setText("5")
             self.inputs["entangled"].setText("0")
         elif text == "AMPS Firewall (Gravity Sink)":
+            # --- Core physics ---
             self.paper1_exact_cb.setChecked(False)
             self.thermal_bath_cb.setChecked(False)
             self.inputs["mode"].setText("gravity-sink")
@@ -641,6 +737,31 @@ class TeleparallelGUI(QMainWindow):
             self.inputs["torsion"].setText("1.0")
             self.inputs["entangled"].setText("1")
             self.inputs["sink_mass"].setText("50000.0")
+            self.pauli_power_combo.setCurrentIndex(0)  # 1/r^3 Kaluza-Klein
+            self.inputs["dt"].setText("0.02")
+            self.firewall_active_cb.setChecked(False)  # No forced math — organic evolution only
+            # --- Coupling & toggles (previously inherited) ---
+            self.spin_coupling_cb.setChecked(True)
+            self.eraser_active_cb.setChecked(False)
+            self.qed_vacpol_cb.setChecked(False)
+            self.qed_lamb_cb.setChecked(False)
+            self.qed_compton_cb.setChecked(False)
+            # --- Gravity-sink parameters ---
+            self.inputs["collapse_radius"].setText("20.0")
+            self.inputs["collapse_G"].setText("1.0")
+            self.inputs["beam_momentum"].setText("5000.0")
+            self.inputs["impact_parameter"].setText("0.5")
+            self.inputs["amps_cooling_cap"].setText("1.0")
+            # --- Slit geometry (not used in gravity-sink but set explicitly for hygiene) ---
+            self.inputs["slit_width"].setText("4.0")
+            self.inputs["slit_separation"].setText("6.0")
+            self.inputs["num_slits"].setText("2")
+            self.inputs["wall_z_layers"].setText("3")
+            self.inputs["wall_depth"].setText("5")
+            # --- Timing & misc ---
+            self.inputs["total_ticks"].setText("5000")
+            self.inputs["num_anchors"].setText("1")
+            self.inputs["galactic_spin"].setText("0.0")
         elif text == "Direct Collapse (N-Body)":
             self.paper1_exact_cb.setChecked(False)
             self.thermal_bath_cb.setChecked(False)
@@ -654,13 +775,15 @@ class TeleparallelGUI(QMainWindow):
             self.inputs["entangled"].setText("0")
             self.inputs["collapse_radius"].setText("20.0")
             self.inputs["collapse_G"].setText("1.0")
+            self.pauli_power_combo.setCurrentIndex(0)  # 1/r^3 Kaluza-Klein
+            self.inputs["dt"].setText("0.02")
         elif text == "Delayed Choice Quantum Eraser":
             self.paper1_exact_cb.setChecked(True)
             self.thermal_bath_cb.setChecked(False)
             self.inputs["mode"].setText("quantum-eraser")
             self.inputs["num_particles"].setText("10000")
-            self.inputs["mass_a"].setText("1.0")
-            self.inputs["mass_b"].setText("1.0")
+            self.inputs["mass_a"].setText("0.511")
+            self.inputs["mass_b"].setText("0.511")
             self.inputs["pauli"].setText("500.0")
             self.inputs["vacuum"].setText("0.001")
             self.inputs["torsion"].setText("1.0")
@@ -668,14 +791,15 @@ class TeleparallelGUI(QMainWindow):
             self.inputs["wall_z_layers"].setText("1")
             self.inputs["wall_depth"].setText("1")
             self.inputs["entangled"].setText("1")
+            self.inputs["dt"].setText("0.02")
             self.eraser_active_cb.setChecked(False)
         elif text == "Delayed Choice (Heat Sink Eraser)":
             self.paper1_exact_cb.setChecked(True)
             self.thermal_bath_cb.setChecked(False)
             self.inputs["mode"].setText("heat-sink-eraser")
             self.inputs["num_particles"].setText("10000")
-            self.inputs["mass_a"].setText("1.0")
-            self.inputs["mass_b"].setText("1.0")
+            self.inputs["mass_a"].setText("0.511")
+            self.inputs["mass_b"].setText("0.511")
             self.inputs["pauli"].setText("500.0")
             self.inputs["vacuum"].setText("0.001")
             self.inputs["torsion"].setText("1.0")
@@ -683,6 +807,7 @@ class TeleparallelGUI(QMainWindow):
             self.inputs["wall_z_layers"].setText("1")
             self.inputs["wall_depth"].setText("1")
             self.inputs["entangled"].setText("0")
+            self.inputs["dt"].setText("0.02")
         elif text == "Veneziano Amplitude (Soft Scattering)":
             self.paper1_exact_cb.setChecked(False)
             self.spin_coupling_cb.setChecked(True)
@@ -710,14 +835,15 @@ class TeleparallelGUI(QMainWindow):
             self.inputs["mass_a"].setText("1.0")
             self.inputs["mass_b"].setText("1.0")
             self.inputs["pauli"].setText("5000.0")
-            self.inputs["vacuum"].setText("0.0")
+            self.inputs["vacuum"].setText("0.001")
             self.inputs["torsion"].setText("1.0")
             self.inputs["beam_momentum"].setText("5000.0")
             self.inputs["photon_freq"].setText("500.0")
             self.inputs["work_function"].setText("1000.0")
             self.inputs["entangled"].setText("0")
             self.inputs["dt"].setText("0.000001")
-            self.inputs["total_ticks"].setText("10000")
+            self.inputs["total_ticks"].setText("100000")
+            self.inputs["zmq_flush_rate"] = QLineEdit("10") # Prevent ZMQ connection timeout
             
         elif text == "Holographic Entanglement":
             self.inputs["mode"].setText("holographic")
@@ -862,7 +988,7 @@ class TeleparallelGUI(QMainWindow):
             self.inputs["total_ticks"].setText("10000")
             self.eraser_active_cb.setChecked(False)
             self.firewall_active_cb.setChecked(False)
-            self.pauli_power_combo.setCurrentIndex(2) # 1/r^3 Pauli for TEGR Antenna
+            self.pauli_power_combo.setCurrentIndex(0)  # 1/r^3 Kaluza-Klein
         elif text == "Stochastic Hum (Mark Thompson Phase 2)":
             self.paper1_exact_cb.setChecked(False)
             self.spin_coupling_cb.setChecked(True)
@@ -881,8 +1007,231 @@ class TeleparallelGUI(QMainWindow):
             self.inputs["total_ticks"].setText("10000")
             self.eraser_active_cb.setChecked(False)
             self.firewall_active_cb.setChecked(False)
-            self.pauli_power_combo.setCurrentIndex(2) # 1/r^3 Pauli
+            self.pauli_power_combo.setCurrentIndex(0)  # 1/r^3 Kaluza-Klein
             self.inputs["antenna_file"].setText("pta_residuals.csv") # Stochastic Hum Injection
+        elif text == "Mass Sweep: Electron (0.511 MeV)":
+            # Paper 3, Section 6: Mass-Dependent Dynamical Complexity
+            # Gravity-sink with M=25,000, entangled pair, 1/r^3 KK
+            self.paper1_exact_cb.setChecked(False)
+            self.spin_coupling_cb.setChecked(True)
+            self.thermal_bath_cb.setChecked(False)
+            self.pauli_power_combo.setCurrentIndex(0)  # 1/r^3 Kaluza-Klein
+            self.inputs["mode"].setText("gravity-sink")
+            self.inputs["num_particles"].setText("2")
+            self.inputs["mass_a"].setText("0.511")
+            self.inputs["mass_b"].setText("0.511")
+            self.inputs["pauli"].setText("500.0")
+            self.inputs["vacuum"].setText("0.001")
+            self.inputs["torsion"].setText("1.0")
+            self.inputs["entangled"].setText("1")
+            self.inputs["sink_mass"].setText("25000.0")
+            self.inputs["dt"].setText("0.02")
+        elif text == "Mass Sweep: Pion (134.98 MeV)":
+            self.paper1_exact_cb.setChecked(False)
+            self.spin_coupling_cb.setChecked(True)
+            self.thermal_bath_cb.setChecked(False)
+            self.pauli_power_combo.setCurrentIndex(0)
+            self.inputs["mode"].setText("gravity-sink")
+            self.inputs["num_particles"].setText("2")
+            self.inputs["mass_a"].setText("134.98")
+            self.inputs["mass_b"].setText("134.98")
+            self.inputs["pauli"].setText("500.0")
+            self.inputs["vacuum"].setText("0.001")
+            self.inputs["torsion"].setText("1.0")
+            self.inputs["entangled"].setText("1")
+            self.inputs["sink_mass"].setText("25000.0")
+            self.inputs["dt"].setText("0.02")
+        elif text == "Mass Sweep: Kaon (493.68 MeV)":
+            self.paper1_exact_cb.setChecked(False)
+            self.spin_coupling_cb.setChecked(True)
+            self.thermal_bath_cb.setChecked(False)
+            self.pauli_power_combo.setCurrentIndex(0)
+            self.inputs["mode"].setText("gravity-sink")
+            self.inputs["num_particles"].setText("2")
+            self.inputs["mass_a"].setText("493.68")
+            self.inputs["mass_b"].setText("493.68")
+            self.inputs["pauli"].setText("500.0")
+            self.inputs["vacuum"].setText("0.001")
+            self.inputs["torsion"].setText("1.0")
+            self.inputs["entangled"].setText("1")
+            self.inputs["sink_mass"].setText("25000.0")
+            self.inputs["dt"].setText("0.02")
+        elif text == "Mass Sweep: Proton (938.27 MeV)":
+            self.paper1_exact_cb.setChecked(False)
+            self.spin_coupling_cb.setChecked(True)
+            self.thermal_bath_cb.setChecked(False)
+            self.pauli_power_combo.setCurrentIndex(0)
+            self.inputs["mode"].setText("gravity-sink")
+            self.inputs["num_particles"].setText("2")
+            self.inputs["mass_a"].setText("938.27")
+            self.inputs["mass_b"].setText("938.27")
+            self.inputs["pauli"].setText("500.0")
+            self.inputs["vacuum"].setText("0.001")
+            self.inputs["torsion"].setText("1.0")
+            self.inputs["entangled"].setText("1")
+            self.inputs["sink_mass"].setText("25000.0")
+            self.inputs["dt"].setText("0.02")
+        elif text == "Mass Sweep: 4xProton (3753.05 MeV)":
+            self.paper1_exact_cb.setChecked(False)
+            self.spin_coupling_cb.setChecked(True)
+            self.thermal_bath_cb.setChecked(False)
+            self.pauli_power_combo.setCurrentIndex(0)
+            self.inputs["mode"].setText("gravity-sink")
+            self.inputs["num_particles"].setText("2")
+            self.inputs["mass_a"].setText("3753.05")
+            self.inputs["mass_b"].setText("3753.05")
+            self.inputs["pauli"].setText("500.0")
+            self.inputs["vacuum"].setText("0.001")
+            self.inputs["torsion"].setText("1.0")
+            self.inputs["entangled"].setText("1")
+            self.inputs["sink_mass"].setText("25000.0")
+            self.inputs["dt"].setText("0.02")
+        elif text == "Direct Collapse (N=10)":
+            # Paper 3, Section 7.3: N-Dependent Complexity comparison
+            self.paper1_exact_cb.setChecked(False)
+            self.thermal_bath_cb.setChecked(False)
+            self.inputs["mode"].setText("direct-collapse")
+            self.inputs["num_particles"].setText("10")
+            self.inputs["mass_a"].setText("100.0")
+            self.inputs["mass_b"].setText("100.0")
+            self.inputs["pauli"].setText("500.0")
+            self.inputs["vacuum"].setText("0.01")
+            self.inputs["torsion"].setText("1.0")
+            self.inputs["entangled"].setText("0")
+            self.inputs["collapse_radius"].setText("20.0")
+            self.inputs["collapse_G"].setText("1.0")
+            self.pauli_power_combo.setCurrentIndex(0)  # 1/r^3 Kaluza-Klein
+            self.inputs["dt"].setText("0.02")
+        elif text == "Single-Slit Control":
+            # Paper 3, Section 8: Aperture Geometry control experiment
+            self.paper1_exact_cb.setChecked(True)
+            self.thermal_bath_cb.setChecked(False)
+            self.inputs["mode"].setText("double-slit")
+            self.inputs["num_particles"].setText("10000")
+            self.inputs["mass_a"].setText("0.511")
+            self.inputs["mass_b"].setText("0.511")
+            self.inputs["pauli"].setText("500.0")
+            self.inputs["vacuum"].setText("0.001")
+            self.inputs["torsion"].setText("1.0")
+            self.inputs["slit_width"].setText("4.0")
+            self.inputs["wall_z_layers"].setText("1")
+            self.inputs["wall_depth"].setText("1")
+            self.inputs["dt"].setText("0.02")
+            self.inputs["num_slits"].setText("1")  # Single slit
+        elif text == "Doubled Separation (d=12.0)":
+            # Paper 3, Section 8: Slit separation variation
+            self.paper1_exact_cb.setChecked(True)
+            self.thermal_bath_cb.setChecked(False)
+            self.inputs["mode"].setText("double-slit")
+            self.inputs["num_particles"].setText("10000")
+            self.inputs["mass_a"].setText("0.511")
+            self.inputs["mass_b"].setText("0.511")
+            self.inputs["pauli"].setText("500.0")
+            self.inputs["vacuum"].setText("0.001")
+            self.inputs["torsion"].setText("1.0")
+            self.inputs["slit_width"].setText("4.0")
+            self.inputs["slit_separation"].setText("12.0")
+            self.inputs["wall_z_layers"].setText("1")
+            self.inputs["wall_depth"].setText("1")
+            self.inputs["dt"].setText("0.02")
+        elif text == "Einstein's Stick (Classical)":
+            self.paper1_exact_cb.setChecked(False)
+            self.spin_coupling_cb.setChecked(True)
+            self.thermal_bath_cb.setChecked(False)
+            self.inputs["mode"].setText("einstein-stick")
+            self.inputs["num_particles"].setText("50")  # 1 hammer, 49 stick
+            self.inputs["mass_a"].setText("10.0")      # Hammer mass
+            self.inputs["mass_b"].setText("1.0")       # Stick mass
+            self.inputs["beam_momentum"].setText("5000.0") # Hammer strike momentum
+            self.inputs["work_function"].setText("50000.0") # Hooke's k for the stick (very stiff)
+            self.inputs["slit_separation"].setText("0.1")  # Rest distance d0
+            self.inputs["pauli"].setText("5000.0")     # High repulsion to prevent pass-through
+            self.inputs["vacuum"].setText("0.001")
+            self.inputs["torsion"].setText("1.0")
+            self.inputs["entangled"].setText("0")
+            self.inputs["dt"].setText("0.0001")        # High res dt to resolve stiff stick
+            self.inputs["total_ticks"].setText("10000")
+            self.pauli_power_combo.setCurrentIndex(1)  # 1/r^2 Inverse Square
+        elif text == "Einstein's Stick (Entangled)":
+            self.paper1_exact_cb.setChecked(False)
+            self.spin_coupling_cb.setChecked(True)
+            self.thermal_bath_cb.setChecked(False)
+            self.inputs["mode"].setText("einstein-stick")
+            self.inputs["num_particles"].setText("50")  # 1 hammer, 49 stick
+            self.inputs["mass_a"].setText("10.0")      # Hammer mass
+            self.inputs["mass_b"].setText("1.0")       # Stick mass
+            self.inputs["beam_momentum"].setText("5000.0") # Hammer strike momentum
+            self.inputs["work_function"].setText("50000.0") # Hooke's k for the stick (very stiff)
+            self.inputs["slit_separation"].setText("0.1")  # Rest distance d0
+            self.inputs["pauli"].setText("5000.0")     # High repulsion to prevent pass-through
+            self.inputs["vacuum"].setText("0.001")
+            self.inputs["torsion"].setText("1.0")
+            self.inputs["entangled"].setText("1")      # Enable sync tensor (holographic stick)
+            self.inputs["dt"].setText("0.0001")
+            self.inputs["total_ticks"].setText("10000")
+            self.pauli_power_combo.setCurrentIndex(1)  # 1/r^2 Inverse Square
+        elif text == "AdS-CFT Correspondence":
+            self.paper1_exact_cb.setChecked(False)
+            self.spin_coupling_cb.setChecked(True)
+            self.thermal_bath_cb.setChecked(False)
+            self.inputs["mode"].setText("ads-cft")
+            self.inputs["num_particles"].setText("100")  # 30 boundary + 70 bulk
+            self.inputs["mass_a"].setText("1.0")
+            self.inputs["mass_b"].setText("1.0")
+            self.inputs["num_anchors"].setText("30")     # 30 particles on the boundary (CFT)
+            self.inputs["collapse_radius"].setText("20.0")
+            self.inputs["collapse_G"].setText("100.0")
+            self.inputs["pauli"].setText("500.0")
+            self.inputs["vacuum"].setText("0.01")
+            self.inputs["torsion"].setText("1.0")
+            self.inputs["entangled"].setText("300")      # 300 boundary<->bulk ER=EPR tethers
+            self.inputs["dt"].setText("0.01")
+            self.inputs["total_ticks"].setText("5000")
+            self.pauli_power_combo.setCurrentIndex(0)  # 1/r^3 KK force
+        elif text == "Pilot Wave Double-Slit (Histogram)":
+            self.inputs["mode"].setText("double-slit")
+            self.inputs["num_particles"].setText("10000")
+            self.inputs["mass_a"].setText("1.0")
+            self.inputs["mass_b"].setText("1.0")
+            self.inputs["pauli"].setText("500.0")
+            self.inputs["vacuum"].setText("0.001")
+            self.inputs["torsion"].setText("1.0")
+            self.inputs["slit_width"].setText("4.0")
+            self.inputs["slit_separation"].setText("6.0")
+            self.inputs["wall_z_layers"].setText("3")
+            self.inputs["wall_depth"].setText("5")
+            self.inputs["num_slits"].setText("2")
+            self.inputs["beam_momentum"].setText("50.0")
+            self.inputs["dt"].setText("0.001")
+            self.inputs["total_ticks"].setText("5000")
+            self.inputs["entangled"].setText("0")
+            self.paper1_exact_cb.setChecked(False)
+            self.spin_coupling_cb.setChecked(True)
+            self.pauli_power_combo.setCurrentIndex(1)
+            if hasattr(self, 'photon_emission_cb'):
+                self.photon_emission_cb.setChecked(True)
+        elif text == "Pilot Wave (de Broglie-Bohm)":
+            # dBB guidance: particle velocity from torsion grid gradient
+            self.paper1_exact_cb.setChecked(False)
+            self.spin_coupling_cb.setChecked(True)
+            self.thermal_bath_cb.setChecked(False)
+            self.inputs["mode"].setText("pilot-wave")
+            self.inputs["num_particles"].setText("10000")
+            self.inputs["mass_a"].setText("0.511")
+            self.inputs["mass_b"].setText("0.511")
+            self.inputs["pauli"].setText("500.0")
+            self.inputs["vacuum"].setText("0.001")
+            self.inputs["torsion"].setText("1.0")
+            self.inputs["slit_width"].setText("0.5")
+            self.inputs["slit_separation"].setText("9.6")
+            self.inputs["wall_depth"].setText("1")
+            self.inputs["beam_momentum"].setText("5000.0")
+            self.inputs["dt"].setText("0.001")
+            self.inputs["total_ticks"].setText("5000")
+            self.inputs["entangled"].setText("0")
+            self.pauli_power_combo.setCurrentIndex(0)  # 1/r^3 KK force
+            self.eraser_active_cb.setChecked(False)
+            self.firewall_active_cb.setChecked(False)
 
     def run_simulation(self):
         self.run_btn.setEnabled(False)
@@ -906,7 +1255,10 @@ class TeleparallelGUI(QMainWindow):
             "torsion": self.inputs["torsion"].text(),
             "eraser_active": 1 if self.eraser_active_cb.isChecked() else 0,
             "firewall_active": 1 if self.firewall_active_cb.isChecked() else 0,
+            "photon_emission": 1 if getattr(self, 'photon_emission_cb', None) and self.photon_emission_cb.isChecked() else 0,
             "slit_width": self.inputs["slit_width"].text(),
+            "slit_separation": self.inputs["slit_separation"].text(),
+            "num_slits": self.inputs["num_slits"].text(),
             "wall_z_layers": self.inputs["wall_z_layers"].text(),
             "wall_depth": self.inputs["wall_depth"].text(),
             "entangled": self.inputs["entangled"].text(),
@@ -941,7 +1293,9 @@ class TeleparallelGUI(QMainWindow):
             "buffer_ip": self.buffer_ip_input.text().strip(),
             "buffer_user": self.buffer_user_input.text().strip(),
             "buffer_port": self.buffer_port_input.text().strip(),
-            "buffer_dir": self.buffer_dir_input.text().strip()
+            "buffer_dir": self.buffer_dir_input.text().strip(),
+            "pilot_wave": 1 if (hasattr(self, 'inputs') and self.inputs.get("mode") and self.inputs["mode"].text() == "pilot-wave") else 0,
+            "interpolation_order": "linear",
         }
 
         self.worker = PhysicsWorker(params)
@@ -957,7 +1311,8 @@ class TeleparallelGUI(QMainWindow):
         scrollbar.setValue(scrollbar.maximum())
 
     def set_math(self, text):
-        self.math_console.setPlainText(text)
+        spaced_text = text.replace('\n', '\n\n')
+        self.math_console.setPlainText(spaced_text)
 
     def open_3d_viewer(self):
         current_mode = self.inputs["mode"].text()
@@ -1135,6 +1490,7 @@ class TeleparallelGUI(QMainWindow):
             self.append_log(f"Error loading plot data: {str(e)}")
 
 if __name__ == "__main__":
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
     app = QApplication(sys.argv)
     window = TeleparallelGUI()
     window.show()

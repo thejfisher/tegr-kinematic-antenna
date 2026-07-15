@@ -1,0 +1,13 @@
+{
+    "run_label": "26. Doubled Separation (d=12.0)",
+    "equations": {
+        "vx'": "-0.182 1 + -0.093 m0 + -0.006 1/r^3 + -0.187 cos(hue) +  1.530 m0/gamma + -2.365 F_pauli_x +  0.800 F_pauli_y",
+        "vy'": "-0.010 1 + -0.005 m0 +  0.006 1/r^3 + -0.070 cos(hue) +  0.138 F_pauli_x + -0.854 F_pauli_y",
+        "vz'": " 0.000",
+        "r''": " 0.135 1 +  0.069 m0 +  107.095 sin(hue) +  0.033 cos(hue) + -1.061 m0/gamma + -2.058 K_sync + -0.239 F_pauli_x +  1.048 F_pauli_y",
+        "hue'": " 0.002 1 +  0.001 m0 +  1.703 sin(hue) +  0.995 m0/gamma + -0.033 K_sync",
+        "gamma'": "-0.065 1 + -0.033 m0 +  0.026 1/r^3 + -0.218 cos(hue) +  0.099 m0/gamma + -0.001 K_sync +  3.270 F_pauli_x + -2.509 F_pauli_y",
+        "m0'": " 0.000"
+    },
+    "r2_score": 0.32820047144361714
+}

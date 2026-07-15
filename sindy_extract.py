@@ -246,26 +246,27 @@ def main():
     
     equations = [eq for eq in model.equations()]
     lhs = ["vx'", "vy'", "vz'", "r''", "hue'", "gamma'", "m0'"]
-    raw_math = "\n".join([f"{lhs[i]} = {eq}" for i, eq in enumerate(equations)])
+    
+    # Calculate R^2 scores per variable
+    try:
+        from sklearn.metrics import r2_score as sklearn_r2
+        predictions = model.predict(X_features)
+        r2_per_var = sklearn_r2(X_targets, predictions, multioutput='raw_values')
+        overall_r2 = model.score(X_features, t=dt, x_dot=X_targets)
+    except Exception as e:
+        r2_per_var = [0.0] * len(lhs)
+        overall_r2 = 0.0
+        print(f"Failed to compute R^2: {e}")
+
+    # Build the math string with per-variable R^2
+    formatted_eqs = []
+    for i, eq in enumerate(equations):
+        formatted_eqs.append(f"{lhs[i]} = {eq}   (R^2 = {r2_per_var[i]:.4f})")
+    raw_math = "\n\n".join(formatted_eqs)
     
     print("Cleaned Math Equations:")
     print(raw_math)
-    
-    try:
-        r2_score = model.score(X_features, t=dt, x_dot=X_targets)
-        print(f"\n[Validation] Overall R^2 Score: {r2_score:.6f}")
-        
-        # Per-equation R² to identify which equations drag the score down
-        X_pred = model.predict(X_features)
-        # Trim to match prediction length
-        X_targets_trim = X_targets[:X_pred.shape[0]]
-        for i, name in enumerate(lhs):
-            ss_res = np.sum((X_targets_trim[:, i] - X_pred[:, i])**2)
-            ss_tot = np.sum((X_targets_trim[:, i] - np.mean(X_targets_trim[:, i]))**2)
-            r2_i = 1.0 - ss_res / (ss_tot + 1e-12)
-            print(f"  {name:>8s} R^2 = {r2_i:.4f}")
-    except Exception as e:
-        print(f"\n[Validation] Could not compute R^2 Score: {e}")
+    print(f"\n[Validation] Overall R^2 Score: {overall_r2:.6f}")
     
     print(f"\nPiping Universal Physics output to local Ollama API ({args.model})...")
     

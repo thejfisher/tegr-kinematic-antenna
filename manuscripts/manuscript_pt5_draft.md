@@ -47,8 +47,10 @@ The rate of phase change is explicitly coupled to the instantaneous geometric se
 At the conclusion of the $15,000$-tick collapse, we applied a Ryu-Takayanagi minimal surface measurement, sweeping an imaginary sphere of radius $R$ outward from the center of mass and counting the number of unbroken entanglement tethers intersecting the boundary.
 
 The final structural analysis yielded the following topological correlations:
-*   **Correlation with Area ($R^2$):** $-0.4227$
-*   **Correlation with Volume ($R^3$):** $-0.4320$
+*   **Correlation with Area ($R^2$):** $-0.4227$ ($|0.4227|$)
+*   **Correlation with Volume ($R^3$):** $-0.4320$ ($|0.4320|$)
+
+> **Erratum (v2):** The original comparison code used raw correlation values rather than absolute magnitudes. With the corrected comparison ($|0.4227| < |0.4320|$), the volume correlation is marginally stronger by $0.009$. At this margin, the result is **statistically inconclusive** for $N=50$ particles. Subsequent AdS/CFT experiments with explicit boundary-bulk separation ($N=200$, boundary-only tethering) yielded $|area|=0.7999 > |vol|=0.7737$, confirming Area Law domination at a margin of $0.026$.
 
 The analysis confirmed that the number of entanglement bonds scaling across the cluster no longer scaled with the 3D volume, but had optimized to favor the 2D surface area limit. The gravitational $1/r^2$ collapse natively forced the internal phase-sync network to shed its volume-law topology and compress into a holographic boundary state.
 

@@ -1,0 +1,13 @@
+{
+    "run_label": "29. AdS-CFT Correspondence",
+    "equations": {
+        "vx'": " 16435.221 1 + -3.878 x + -1.079 y + -7.201 z + -1.467 r +  2.732 hue + -15839.154 gamma +  16348.508 m0 + -1466.677 1/r^3 +  8.356 sin(hue) +  1.074 cos(hue) + -16759.598 m0/gamma + -0.257 K_sync +  814.923 F_pauli_x +  70.154 F_pauli_y +  23.879 F_pauli_z +  1.368 F_torsion",
+        "vy'": " 2455.740 1 +  3.937 x + -10.540 y +  4.068 z + -8.492 r + -2.731 hue + -2415.288 gamma +  2442.785 m0 + -937.434 1/r^3 +  6.775 sin(hue) +  7.227 cos(hue) + -2359.700 m0/gamma + -1.928 K_sync +  123.914 F_pauli_x +  368.199 F_pauli_y + -17.172 F_pauli_z +  1.549 F_torsion",
+        "vz'": "-12627.382 1 + -18.162 x +  24.459 y + -25.937 z +  23.246 r +  5.278 hue +  11383.183 gamma + -12560.757 m0 + -6193.033 1/r^3 +  11.630 sin(hue) +  6.165 cos(hue) +  12483.934 m0/gamma +  13.068 K_sync +  101.957 F_pauli_x + -161.201 F_pauli_y +  339.985 F_pauli_z + -1.826 F_torsion",
+        "r''": "-21388.000 1 + -0.657 x +  0.913 y + -1.424 z + -0.194 r +  1.814 hue +  20503.484 gamma + -21275.160 m0 + -146.100 1/r^3 + -6.803 sin(hue) + -6.570 cos(hue) +  21527.357 m0/gamma +  6.013 K_sync +  216.615 F_pauli_x + -231.943 F_pauli_y + -95.592 F_pauli_z + -0.075 F_torsion",
+        "hue'": "-30.225 1 + -0.016 y + -0.016 z + -0.017 r + -0.009 hue +  2.330 gamma + -30.065 m0 +  0.521 1/r^3 + -0.011 sin(hue) +  1.734 m0/gamma +  0.572 K_sync + -0.013 F_pauli_x +  0.005 F_pauli_y + -0.024 F_pauli_z",
+        "gamma'": "-9.121 1 +  8.773 gamma + -9.074 m0 + -8.498 1/r^3 +  0.028 sin(hue) +  0.034 cos(hue) +  9.434 m0/gamma +  0.400 F_pauli_x +  0.082 F_pauli_y + -0.096 F_pauli_z",
+        "m0'": " 0.000"
+    },
+    "r2_score": 0.3425543975215614
+}
