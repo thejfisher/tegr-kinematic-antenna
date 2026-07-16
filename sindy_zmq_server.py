@@ -35,6 +35,8 @@ def run_sindy_and_ollama(history, ai_url, ai_model, no_llm=False, run_label="def
     # In 2-body mode, index 0 = source particle.
     # galactic_spin mode also uses index 0 (anchor).
     tracker_idx = 0
+    if "String-Sink" in run_label:
+        tracker_idx = 1 # Track the first particle of the string, not the gravity sink
     
     m0_history = history[:, tracker_idx, 7]
     mass_diffs = np.abs(np.diff(m0_history))
@@ -91,12 +93,17 @@ def run_sindy_and_ollama(history, ai_url, ai_model, no_llm=False, run_label="def
         gamma = np.sqrt(1.0 + p_sq / (m0**2 * 1000.0**2))
         
     inv_r3 = np.clip(1.0 / (r**3 + 1e-12), -1e6, 1e6)
+    inv_r2 = np.clip(1.0 / (r**2 + 1e-12), -1e6, 1e6)
     m0_over_gamma = m0 / (gamma + 1e-12)
     sin_hue = np.sin(hue)
     cos_hue = np.cos(hue)
     
-    X_features = np.column_stack((x, y, z, r, hue, gamma, m0, inv_r3, sin_hue, cos_hue, m0_over_gamma))
-    feature_names = ['x', 'y', 'z', 'r', 'hue', 'gamma', 'm0', '1/r^3', 'sin(hue)', 'cos(hue)', 'm0/gamma']
+    x_over_r3 = x * inv_r3
+    y_over_r3 = y * inv_r3
+    z_over_r3 = z * inv_r3
+    
+    X_features = np.column_stack((x, y, z, r, hue, gamma, m0, inv_r3, inv_r2, sin_hue, cos_hue, m0_over_gamma, x_over_r3, y_over_r3, z_over_r3))
+    feature_names = ['x', 'y', 'z', 'r', 'hue', 'gamma', 'm0', '1/r^3', '1/r^2', 'sin(hue)', 'cos(hue)', 'm0/gamma', 'x/r^3', 'y/r^3', 'z/r^3']
     
     vx = px / (gamma * m0)
     vy = py / (gamma * m0)
@@ -114,7 +121,12 @@ def run_sindy_and_ollama(history, ai_url, ai_model, no_llm=False, run_label="def
     X_targets = np.column_stack((X_ddots, internal_dots))
     
     N_particles = history.shape[1]
-    tracker_actual_idx = tracker_idx % N_particles
+    # For N=2 (string-sink), we usually tracked particle 1 (sink).
+    # For N>2 (double slit), the beam particle is always at index 0.
+    if N_particles > 2:
+        tracker_actual_idx = 0
+    else:
+        tracker_actual_idx = tracker_idx % N_particles
     
     if N_particles == 2:
         other_idx = 0 if tracker_actual_idx == 1 else 1
@@ -248,16 +260,30 @@ def run_sindy_and_ollama(history, ai_url, ai_model, no_llm=False, run_label="def
     n_features = X_features.shape[0]
     if n_features > n_targets:
         trim = n_features - n_targets
-        front = trim // 2
-        X_features = X_features[front:front + n_targets]
+        print(f"Trimming {trim} elements to match targets. (Warning: mismatch implies skipped frames)")
+        X_features = X_features[trim:]
+    elif n_targets > n_features:
+        trim = n_targets - n_features
+        print(f"Trimming {trim} targets to match features.")
+        X_targets = X_targets[trim:]
     
     generalized_library = ps.PolynomialLibrary(degree=1, include_bias=True)
-    optimizer = ps.STLSQ(threshold=0.005, alpha=0.001)
+    optimizer = ps.STLSQ(threshold=0.01, alpha=0.001, normalize_columns=True)
     model = ps.SINDy(feature_library=generalized_library, optimizer=optimizer)
     
     valid_mask = np.isfinite(X_features).all(axis=1) & np.isfinite(X_targets).all(axis=1)
     X_features = X_features[valid_mask]
     X_targets = X_targets[valid_mask]
+    
+    # Remove zero-variance columns (e.g., z=0, m0=const, z/r^3=0 in 2D orbits)
+    # These cause SVD failure when normalize_columns=True divides by std=0
+    col_var = np.var(X_features, axis=0)
+    nonzero_cols = col_var > 1e-12
+    if not np.all(nonzero_cols):
+        removed = [feature_names[i] for i in range(len(feature_names)) if not nonzero_cols[i]]
+        print(f"Removing {len(removed)} zero-variance features: {removed}")
+        X_features = X_features[:, nonzero_cols]
+        feature_names = [fn for i, fn in enumerate(feature_names) if nonzero_cols[i]]
     
     # Calculate Correlation Matrix
     print(f"Calculating feature correlation matrix...")
@@ -381,25 +407,56 @@ INSTRUCTIONS FOR TRANSLATION:
 3. Do NOT use generic terms or spoon-fed answers. Synthesize a profound, original theoretical physics conclusion.
 """
 
-    payload = {
-        "model": ai_model,
-        "prompt": prompt,
-        "stream": False
-    }
+    base_url = ai_url.rstrip('/')
+    is_openai = "chat/completions" in base_url or "openai" in base_url or "github" in base_url or "azure" in base_url
     
-    api_url = ai_url.rstrip('/') + "/api/generate"
     try:
-        response = requests.post(api_url, json=payload)
-        if response.status_code == 200:
-            result = response.json()
-            print("\n========================================")
-            print("OLLAMA TRANSLATION:")
-            print("========================================\n")
-            print(result.get("response", "No response text found."))
+        if is_openai:
+            if not base_url.endswith("/chat/completions") and not base_url.endswith("/completions"):
+                api_url = base_url + "/chat/completions"
+            else:
+                api_url = base_url
+                
+            payload = {
+                "model": ai_model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.7
+            }
+            headers = {"Content-Type": "application/json"}
+            
+            token = os.environ.get("GITHUB_TOKEN") or os.environ.get("OPENAI_API_KEY")
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+                
+            response = requests.post(api_url, json=payload, headers=headers)
+            if response.status_code == 200:
+                result = response.json()
+                print("\n========================================")
+                print("AI TRANSLATION:")
+                print("========================================\n")
+                content = result.get("choices", [{}])[0].get("message", {}).get("content", "No response text found.")
+                print(content)
+            else:
+                print(f"API Error: {response.status_code} - {response.text}")
         else:
-            print(f"Ollama API Error: {response.status_code} - {response.text}")
+            payload = {
+                "model": ai_model,
+                "prompt": prompt,
+                "stream": False
+            }
+            api_url = base_url + "/api/generate"
+            
+            response = requests.post(api_url, json=payload)
+            if response.status_code == 200:
+                result = response.json()
+                print("\n========================================")
+                print("OLLAMA TRANSLATION:")
+                print("========================================\n")
+                print(result.get("response", "No response text found."))
+            else:
+                print(f"Ollama API Error: {response.status_code} - {response.text}")
     except requests.exceptions.ConnectionError:
-        print("\nERROR: Could not connect to Ollama.")
+        print("\nERROR: Could not connect to AI endpoint.")
 
 
 def main():

@@ -97,38 +97,82 @@ INSTRUCTIONS FOR TRANSLATION:
         print("\n--- Skipping Ollama Translation (--no_llm flag active) ---")
         return
 
-    payload = {
-        "model": args.model,
-        "prompt": prompt,
-        "stream": False
-    }
+    import os
     
-    api_url = args.url.rstrip('/') + "/api/generate"
-    
+    # Format the URL properly and determine the API type
+    base_url = args.url.rstrip('/')
+    is_openai = "chat/completions" in base_url or "openai" in base_url or "github" in base_url or "azure" in base_url
+
     try:
-        print(f"Waiting for Ollama to synthesize the laws of physics from {api_url}...")
-        response = requests.post(api_url, json=payload)
-        
-        if response.status_code == 200:
-            result = response.json()
-            print("\n========================================")
-            print("OLLAMA TRANSLATION:")
-            print("========================================\n")
-            print(result.get("response", "No response text found."))
+        if is_openai:
+            if not base_url.endswith("/chat/completions") and not base_url.endswith("/completions"):
+                api_url = base_url + "/chat/completions"
+            else:
+                api_url = base_url
+                
+            payload = {
+                "model": args.model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.7
+            }
+            headers = {"Content-Type": "application/json"}
             
-            eval_count = result.get("eval_count", 0)
-            prompt_eval_count = result.get("prompt_eval_count", 0)
-            print("\n--- LLM RESOURCE USAGE ---")
-            print(f"Prompt Tokens    : {prompt_eval_count}")
-            print(f"Generated Tokens : {eval_count}")
-            print(f"Total Tokens     : {eval_count + prompt_eval_count}")
+            token = os.environ.get("GITHUB_TOKEN") or os.environ.get("OPENAI_API_KEY")
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+                
+            print(f"Waiting for AI to synthesize the laws of physics from {api_url}...")
+            response = requests.post(api_url, json=payload, headers=headers)
             
-            print("\n========================================")
+            if response.status_code == 200:
+                result = response.json()
+                print("\n========================================")
+                print("AI TRANSLATION:")
+                print("========================================\n")
+                content = result.get("choices", [{}])[0].get("message", {}).get("content", "No response text found.")
+                print(content)
+                
+                usage = result.get("usage", {})
+                eval_count = usage.get("completion_tokens", 0)
+                prompt_eval_count = usage.get("prompt_tokens", 0)
+                print("\n--- LLM RESOURCE USAGE ---")
+                print(f"Prompt Tokens    : {prompt_eval_count}")
+                print(f"Generated Tokens : {eval_count}")
+                print(f"Total Tokens     : {eval_count + prompt_eval_count}")
+                print("\n========================================")
+            else:
+                print(f"API Error: {response.status_code} - {response.text}")
+                
         else:
-            print(f"Ollama API Error: {response.status_code} - {response.text}")
+            payload = {
+                "model": args.model,
+                "prompt": prompt,
+                "stream": False
+            }
+            api_url = base_url + "/api/generate"
             
+            print(f"Waiting for Ollama to synthesize the laws of physics from {api_url}...")
+            response = requests.post(api_url, json=payload)
+            
+            if response.status_code == 200:
+                result = response.json()
+                print("\n========================================")
+                print("OLLAMA TRANSLATION:")
+                print("========================================\n")
+                print(result.get("response", "No response text found."))
+                
+                eval_count = result.get("eval_count", 0)
+                prompt_eval_count = result.get("prompt_eval_count", 0)
+                print("\n--- LLM RESOURCE USAGE ---")
+                print(f"Prompt Tokens    : {prompt_eval_count}")
+                print(f"Generated Tokens : {eval_count}")
+                print(f"Total Tokens     : {eval_count + prompt_eval_count}")
+                print("\n========================================")
+            else:
+                print(f"Ollama API Error: {response.status_code} - {response.text}")
+                
     except requests.exceptions.ConnectionError:
-        print("\nERROR: Could not connect to Ollama.")
+        print("\nERROR: Could not connect to AI endpoint.")
 
 if __name__ == "__main__":
     main()
