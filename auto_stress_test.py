@@ -6,7 +6,7 @@ import itertools
 from multiprocessing import Pool, current_process
 
 # Configure your Swarm setup
-# 3 GPUs on thejfisher: cuda:0 (3060), cuda:1 (4060 Ti), cuda:2 (5060 Ti)
+# 3 GPUs on <INSERT_USERNAME_HERE>: cuda:0 (3060), cuda:1 (4060 Ti), cuda:2 (5060 Ti)
 GPU_IDS = [0, 1, 2] 
 def run_physics_job(val_pauli, val_vac, val_torsion, val_cmb, test_mode):
     """
@@ -35,7 +35,7 @@ def run_physics_job(val_pauli, val_vac, val_torsion, val_cmb, test_mode):
         "--torsion", str(val_torsion),
         "--cmb_noise", str(val_cmb),
         "--device", "cuda:0",
-        "--zmq_target", f"100.66.100.83:{zmq_port}",
+        "--zmq_target", f"<INSERT_BUFFER_NODE_IP_HERE>:{zmq_port}",
         "--run_label", run_label
     ]
     

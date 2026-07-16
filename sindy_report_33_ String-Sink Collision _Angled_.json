@@ -1,0 +1,13 @@
+{
+    "run_label": "33. String-Sink Collision (Angled)",
+    "equations": {
+        "vx'": "-0.895 1 + -0.029 y + -0.005 z +  0.119 hue +  8.197 gamma + -0.872 m0 + -8.446 m0/gamma + -66.021 F_pauli_x + -3.355 F_pauli_y + -0.867 F_pauli_z + -0.749 F_torsion",
+        "vy'": "-156.763 1 + -150.609 gamma +  451.924 m0 +  0.016 sin(hue) +  0.008 cos(hue) + -142.745 m0/gamma + -82.570 F_pauli_x +  629.737 F_pauli_y + -8.977 F_pauli_z + -6.399 F_torsion",
+        "vz'": " 2.332 1 + -0.237 y + -0.065 z +  0.795 hue + -36.054 gamma +  2.274 m0 + -0.072 sin(hue) + -0.011 cos(hue) +  34.216 m0/gamma +  274.786 F_pauli_x +  3.581 F_pauli_y +  35.809 F_pauli_z +  0.879 F_torsion",
+        "r''": "-1.560 1 + -0.305 x + -0.425 y + -0.082 z +  0.293 r +  1.906 hue + -1.711 gamma + -1.560 m0 +  0.211 sin(hue) +  0.059 cos(hue) + -1.422 m0/gamma + -0.026 K_sync +  0.005 F_pauli_x +  0.011 F_pauli_y + -0.010 F_pauli_z +  0.366 F_torsion",
+        "hue'": " 0.322 1 + -0.206 gamma +  0.128 m0 +  0.754 m0/gamma +  0.002 F_pauli_x +  0.001 F_pauli_y",
+        "gamma'": "-0.407 F_pauli_x + -0.194 F_pauli_y +  0.060 F_pauli_z",
+        "m0'": " 0.000"
+    },
+    "r2_score": 0.6056757805614227
+}

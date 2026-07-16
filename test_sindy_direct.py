@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Direct test of PySINDy + ROCm on hal's r9700 GPU."""
+"""Direct test of PySINDy + ROCm on <INSERT_BUFFER_USERNAME_HERE>'s r9700 GPU."""
 import numpy as np
 import time
 
 print("=" * 60)
-print("DIRECT SINDY + GPU TEST ON HAL")
+print("DIRECT SINDY + GPU TEST ON <INSERT_BUFFER_USERNAME_HERE>")
 print("=" * 60)
 
 # 1. Test PyTorch + GPU

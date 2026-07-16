@@ -1,0 +1,13 @@
+{
+    "run_label": "25. Single-Slit Control",
+    "equations": {
+        "vx'": "-0.463 1 + -0.237 m0 + -0.006 1/r^3 + -0.001 sin(hue) + -0.033 cos(hue) +  2.317 m0/gamma + -0.001 K_sync + -0.109 F_pauli_x +  0.509 F_pauli_y",
+        "vy'": " 4.847 sin(hue) + -0.032 m0/gamma + -0.093 K_sync + -1.268 F_pauli_x +  0.610 F_pauli_y",
+        "vz'": " 0.000",
+        "r''": " 0.307 1 +  0.157 m0 +  0.013 1/r^3 +  0.001 sin(hue) +  0.067 cos(hue) + -1.558 m0/gamma +  0.003 K_sync +  2.641 F_pauli_x + -1.431 F_pauli_y",
+        "hue'": " 0.704 sin(hue) +  0.995 m0/gamma + -0.014 K_sync",
+        "gamma'": "-0.152 1 + -0.078 m0 +  0.042 1/r^3 + -0.001 sin(hue) + -0.375 cos(hue) +  0.287 m0/gamma + -0.002 K_sync + -1.284 F_pauli_x + -2.280 F_pauli_y",
+        "m0'": " 0.000"
+    },
+    "r2_score": 0.3296228341577811
+}

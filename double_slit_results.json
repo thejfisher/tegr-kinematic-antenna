@@ -1,1 +1,0 @@
-{"beam_total": 200, "screen_hits": 0, "reflected": 200, "in_flight": 0, "y_positions": [], "slit_used": [], "histogram_bins": [], "histogram_edges": [], "slit_width": 4.0, "slit_separation": 6.0, "protocol": "tonomura_batch_gpu", "batch_size": 100, "device": "cuda"}

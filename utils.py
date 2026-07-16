@@ -103,7 +103,9 @@ def trilinear_interpolate_gradient(field, coords, grid_min, grid_max, grid_res, 
 
     # Normalise coords to [-1, 1]
     norm = 2.0 * (coords - grid_min) / (grid_max - grid_min) - 1.0  # (N, 3)
-    grid = norm.unsqueeze(0).unsqueeze(0).unsqueeze(0)  # (1, 1, 1, N, 3)
+    # PyTorch grid_sample expects (x, y, z) to map to (W, H, D). Since our phi is (X, Y, Z),
+    # we must pass [Z, Y, X] to grid_sample.
+    grid = norm.flip(-1).unsqueeze(0).unsqueeze(0).unsqueeze(0)  # (1, 1, 1, N, 3)
 
     sampled = F.grid_sample(
         grad_field,

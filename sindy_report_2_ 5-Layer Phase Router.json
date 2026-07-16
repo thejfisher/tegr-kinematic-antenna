@@ -1,0 +1,13 @@
+{
+    "run_label": "2. 5-Layer Phase Router",
+    "equations": {
+        "vx'": "-0.022 1 + -0.011 m0 + -22.011 1/r^3 + -0.127 cos(hue) +  0.400 m0/gamma + -1.308 F_pauli_x + -0.123 F_pauli_y",
+        "vy'": "-0.009 1 + -1.967 1/r^3 + -0.094 cos(hue) + -0.034 m0/gamma + -0.110 F_pauli_x + -0.087 F_pauli_y",
+        "vz'": " 0.000",
+        "r''": " 0.027 1 +  0.014 m0 +  9.662 1/r^3 +  0.080 cos(hue) + -0.422 m0/gamma +  0.348 F_pauli_x +  0.383 F_pauli_y",
+        "hue'": " 1.013 m0/gamma",
+        "gamma'": " 115.288 1 + -0.016 x +  0.010 y +  0.003 z + -0.036 r + -0.071 hue +  58.912 m0 +  52.936 1/r^3 + -0.010 sin(hue) + -10.267 cos(hue) + -187.769 m0/gamma + -0.016 K_sync +  389.469 F_pauli_x +  490.881 F_pauli_y",
+        "m0'": " 0.000"
+    },
+    "r2_score": 0.3108748496087406
+}

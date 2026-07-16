@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """End-to-end ZMQ pipeline test: Simulates what the collider does.
-Run on thejfisher, sends to hal, hal processes and prints."""
+Run on <INSERT_USERNAME_HERE>, sends to <INSERT_BUFFER_USERNAME_HERE>, <INSERT_BUFFER_USERNAME_HERE> processes and prints."""
 import zmq
 import numpy as np
 import time
 import sys
 
-target = sys.argv[1] if len(sys.argv) > 1 else "100.66.100.83:7777"
+target = sys.argv[1] if len(sys.argv) > 1 else "<INSERT_BUFFER_NODE_IP_HERE>:7777"
 context = zmq.Context()
 socket = context.socket(zmq.PUSH)
 socket.connect(f"tcp://{target}")

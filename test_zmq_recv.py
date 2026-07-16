@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test ZeroMQ PULL server on hal - mimics sindy_zmq_server.py"""
+"""Test ZeroMQ PULL server on <INSERT_BUFFER_USERNAME_HERE> - mimics sindy_zmq_server.py"""
 import zmq
 import numpy as np
 import sys
