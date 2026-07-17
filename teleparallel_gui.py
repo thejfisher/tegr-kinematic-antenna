@@ -922,11 +922,11 @@ class TeleparallelGUI(QMainWindow):
         self.pipeline_checkbox = QCheckBox("Enable ZMQ Ping-Pong Distributed Pipeline")
         self.pipeline_checkbox.setChecked(True)
         
-        self.physics_ip_input = QLineEdit("127.0.0.1")
+        self.physics_ip_input = QLineEdit("100.122.147.67")
         self.physics_user_input = QLineEdit("thejfisher")
         self.physics_dir_input = QLineEdit("~/AI_Vault/teleparallel_sim_photons")
         
-        self.buffer_ip_input = QLineEdit("127.0.0.1")
+        self.buffer_ip_input = QLineEdit("100.66.100.83")
         self.buffer_user_input = QLineEdit("hal")
         self.buffer_port_input = QLineEdit("7777")
         self.buffer_dir_input = QLineEdit("~/hxseq-vsgx4/teleparallel_sim_photons")

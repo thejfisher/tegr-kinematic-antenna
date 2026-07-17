@@ -2220,7 +2220,7 @@ if args.mode in ["double-slit", "quantum-eraser", "heat-sink-eraser", "single-ed
                     pilot_wave_force = (1.0 / m0_safe) * grad_at_particle * (C**2) * args.vacuum
                     pilot_wave_force = torch.clamp(pilot_wave_force, min=-25000.0, max=25000.0)
                 
-                if DBB_GUIDANCE:
+                if DBB_GUIDANCE and getattr(args, 'photon_emission', 0):
                     # ===== de BROGLIE-BOHM GUIDANCE =====
                     # The wave gradient directly SETS the electron's transverse velocity.
                     # The electron surfs the wave — the wave IS the equation of motion.

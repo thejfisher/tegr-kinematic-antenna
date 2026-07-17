@@ -6,7 +6,7 @@ This document outlines how the simulation environment is architected and the exa
 
 Because the simulation requires both local file access to the Windows `Z:` drive and heavy AI inference via Ollama (`deepseek-r1:14b`) running on your Ubuntu machine (`thejfisher-AI`), the system runs in a hybrid environment:
 
-1. **Ollama AI Server**: Runs on the Ubuntu machine (`100.122.147.67`).
+1. **Ollama AI Server**: Runs on the Ubuntu machine (`127.0.0.1`).
 2. **FastAPI Backend (`api.py`)**: Runs locally on Windows to execute PySINDy extraction and mathematical physics safely on the `Z:` drive.
 3. **React Frontend (`collider-web`)**: Runs locally on Windows, providing the UI dashboard.
 4. **SSH Tunnel**: A secure port-forwarding bridge that connects the Windows Backend directly to the Ubuntu Ollama server.
@@ -21,7 +21,7 @@ If you ever restart your computer or close your terminals, open **three separate
 This forwards the local port `11434` on your Windows machine to the Ollama server on the Ubuntu machine. Keep this terminal open in the background.
 ```bash
 # In Terminal 1 (Windows PowerShell/Command Prompt)
-ssh -N -L 11434:localhost:11434 thejfisher@100.122.147.67
+ssh -N -L 11434:localhost:11434 thejfisher@127.0.0.1
 ```
 
 ### 2. Start the Physics API Backend

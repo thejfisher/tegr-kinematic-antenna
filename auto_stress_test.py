@@ -35,7 +35,7 @@ def run_physics_job(val_pauli, val_vac, val_torsion, val_cmb, test_mode):
         "--torsion", str(val_torsion),
         "--cmb_noise", str(val_cmb),
         "--device", "cuda:0",
-        "--zmq_target", f"100.66.100.83:{zmq_port}",
+        "--zmq_target", f"127.0.0.1:{zmq_port}",
         "--run_label", run_label
     ]
     

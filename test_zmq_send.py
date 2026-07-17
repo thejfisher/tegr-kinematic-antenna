@@ -4,7 +4,7 @@ import zmq
 import numpy as np
 import sys
 
-target = sys.argv[1] if len(sys.argv) > 1 else "100.66.100.83:7777"
+target = sys.argv[1] if len(sys.argv) > 1 else "127.0.0.1:7777"
 context = zmq.Context()
 socket = context.socket(zmq.PUSH)
 socket.connect(f"tcp://{target}")
