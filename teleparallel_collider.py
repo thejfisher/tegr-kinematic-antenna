@@ -107,7 +107,7 @@ parser.add_argument("--device", type=str, default="auto",
 parser.add_argument("--zmq_port", type=int, default=0,
                     help="ZeroMQ PUSH port to bind and stream tensors (0=off)")
 parser.add_argument("--zmq_target", type=str, default="",
-                    help="IP:Port of ZeroMQ receiver (e.g., 100.66.100.83:7777)")
+                    help="IP:Port of ZeroMQ receiver (e.g., 127.0.0.1:7777)")
 parser.add_argument("--zmq_flush_rate", type=int, default=100,
                     help="Number of ticks to buffer in RAM before flushing to network")
 parser.add_argument("--cmb_noise", type=float, default=0.0,
@@ -1546,83 +1546,61 @@ def run_ticks(current_state, ticks, save_history=True):
         # Position, Phase, and Proper Time Updates (shared by both modes)
         current_state[:, 1:4] += vel_new * DT
         
-        if args.rae_mode:
-            # =====================================================
-            # RELATIVISTIC ADLER EQUATION (RAE)
-            # θ̇ = α(m₀/γ) - κ·sin(θ) + ∇Φ_Pauli
-            # All coefficients self-computed from live physics state.
-            # NO hardcoded SINDy numbers. The equation DISCOVERS its
-            # own dynamics from the local mechanical environment.
-            # =====================================================
-            theta = current_state[:, 8]
-            gamma_flat = gamma_new.squeeze()
-            m0_flat = m0.squeeze()
+        # =====================================================
+        # RELATIVISTIC ADLER EQUATION (RAE)
+        # θ̇ = α(m₀/γ) - κ·sin(θ) + ∇Φ_Pauli
+        # All coefficients self-computed from live physics state.
+        # NO hardcoded SINDy numbers. The equation DISCOVERS its
+        # own dynamics from the local mechanical environment.
+        # =====================================================
+        theta = current_state[:, 8]
+        gamma_flat = gamma_new.squeeze()
+        m0_flat = m0.squeeze()
+        
+        # --- Unconditional Topological Extraction ---
+        # Compute spatial gradients even if RAE mode is off, so they 
+        # can be pushed over ZMQ for SINDy analysis.
+        N_particles = gamma_flat.shape[0]
+        pos = current_state[:, 1:4]
+        
+        if N_particles > 1:
+            # Displacement vectors: r_ij = pos_j - pos_i
+            r_ij = pos.unsqueeze(0) - pos.unsqueeze(1)  # (N, N, 3)
+            r_mag = torch.norm(r_ij, dim=2, keepdim=True).clamp(min=1e-8)  # (N, N, 1)
+            r_hat = r_ij / r_mag  # (N, N, 3) unit displacement vectors
             
+            # Signed gamma differences: γ_j - γ_i (NO abs!)
+            gamma_diff = gamma_flat.unsqueeze(0) - gamma_flat.unsqueeze(1)  # (N, N)
+            
+            # Spatial gradient of gamma at each particle:
+            # ∇γ_i = Σ_j (γ_j - γ_i) * r̂_ij  →  vector per particle
+            grad_gamma = torch.sum(gamma_diff.unsqueeze(2) * r_hat, dim=1)  # (N, 3)
+            
+            # Project onto velocity direction → signed scalar κ
+            v_mag_k = torch.norm(vel_new, dim=1, keepdim=True).clamp(min=1e-8)
+            v_hat_k = vel_new / v_mag_k  # (N, 3)
+            kappa = args.rae_kappa_scale * torch.sum(grad_gamma * v_hat_k, dim=1) / (N_particles - 1)
+        else:
+            kappa = torch.zeros_like(gamma_flat)
+
+        from utils import trilinear_interpolate_gradient
+        grad_phi = trilinear_interpolate_gradient(phi_curr, pos, GRID_MIN, GRID_MAX, GRID_RES, DX)
+        v_mag = torch.norm(vel_new, dim=1, keepdim=True).clamp(min=1e-8)
+        v_hat = vel_new / v_mag
+        # Scalar projection: how much the vacuum gradient pushes along the velocity
+        term3 = args.rae_grad_scale * torch.sum(grad_phi * v_hat, dim=1)
+
+        if args.rae_mode:
             # --- Term 1: Kinematic Baseline α(m₀/γ) ---
-            # The internal clock ticks proportional to proper time.
-            # α = 1.0 (the physics is already in m₀/γ).
             term1 = m0_flat / gamma_flat
             
             # --- Term 2: Topological Soliton Defense -κ·sin(θ - θ̄) ---
-            # RAE v2: DIRECTED (signed) κ from spatial γ gradient.
-            # v1 used |Δγ| which destroyed the sign → always positive κ.
-            # v2 computes ∇γ projected onto velocity: the rate of change
-            # of γ in the direction the particle is moving.
-            #   κ > 0 → heading into higher-γ region (stretching)
-            #   κ < 0 → heading into lower-γ region (compression)
-            # This preserves the restoring/driving distinction.
-            N_particles = gamma_flat.shape[0]
-            if N_particles > 1:
-                pos = current_state[:, 1:4]  # (N, 3) positions
-                
-                # Displacement vectors: r_ij = pos_j - pos_i
-                r_ij = pos.unsqueeze(0) - pos.unsqueeze(1)  # (N, N, 3)
-                r_mag = torch.norm(r_ij, dim=2, keepdim=True).clamp(min=1e-8)  # (N, N, 1)
-                r_hat = r_ij / r_mag  # (N, N, 3) unit displacement vectors
-                
-                # Signed gamma differences: γ_j - γ_i (NO abs!)
-                gamma_diff = gamma_flat.unsqueeze(0) - gamma_flat.unsqueeze(1)  # (N, N)
-                
-                # Spatial gradient of gamma at each particle:
-                # ∇γ_i = Σ_j (γ_j - γ_i) * r̂_ij  →  vector per particle
-                grad_gamma = torch.sum(gamma_diff.unsqueeze(2) * r_hat, dim=1)  # (N, 3)
-                
-                # Project onto velocity direction → signed scalar κ
-                v_mag_k = torch.norm(vel_new, dim=1, keepdim=True).clamp(min=1e-8)
-                v_hat_k = vel_new / v_mag_k  # (N, 3)
-                kappa = args.rae_kappa_scale * torch.sum(grad_gamma * v_hat_k, dim=1) / (N_particles - 1)
-            else:
-                kappa = torch.zeros_like(gamma_flat)
-            
-            # Entanglement order parameter + Washboard potential
-            # The N-body engine always produces PAIRED near-cancellation:
-            #   β·θ - κ·sin(θ)  with β/κ ≈ 0.95-0.999
-            # This is a tilted washboard potential. The linear term (β·θ) 
-            # is the global "tilt" that prevents phase slipping over the
-            # sinusoidal bumps (-κ·sin θ). Without the tilt, violent γ
-            # shockwaves push particles over the topological barrier,
-            # causing 2π phase slips → chaos → R² collapse.
-            #
-            # Combined: κ·[δθ - sin(δθ)] ≈ κ·δθ³/6 for small angles.
-            # This creates a CUBIC restoring well — stable soliton.
             if args.entangled:
                 theta_bar = theta.mean()
                 delta_theta = theta - theta_bar
-                # Hookean spring (linear containment) + sinusoidal soliton
                 term2 = kappa * delta_theta - kappa * torch.sin(delta_theta)
             else:
                 term2 = kappa * theta - kappa * torch.sin(theta)
-            
-            # --- Term 3: Phase Router ∇Φ_Pauli ---
-            # Sampled LIVE from the FDTD vacuum memory grid.
-            # The gradient of the wave field at the particle's position,
-            # projected onto its velocity direction, routes the phase.
-            from utils import trilinear_interpolate_gradient
-            grad_phi = trilinear_interpolate_gradient(phi_curr, pos, GRID_MIN, GRID_MAX, GRID_RES, DX)
-            v_mag = torch.norm(vel_new, dim=1, keepdim=True).clamp(min=1e-8)
-            v_hat = vel_new / v_mag
-            # Scalar projection: how much the vacuum gradient pushes along the velocity
-            term3 = args.rae_grad_scale * torch.sum(grad_phi * v_hat, dim=1)
             
             # --- The Unified RAE Update ---
             theta_dot = term1 + term2 + term3
@@ -1638,7 +1616,7 @@ def run_ticks(current_state, ticks, save_history=True):
         else:
             # --- Original Hard-Computed Hue Update ---
             current_state[:, 8] = (current_state[:, 8] + (m0.squeeze() / gamma_new.squeeze()) * DT) % (2 * np.pi)
-        
+    
             # --- ER=EPR ENTANGLEMENT SYNC (only in hard-compute mode) ---
             if args.entangled and args.mode in ["einstein-stick", "gravity-sink"]:
                 # Kuramoto synchronization for entangled particles
@@ -1740,6 +1718,11 @@ def run_ticks(current_state, ticks, save_history=True):
 
         if save_history and tick % SAVE_INTERVAL == 0:
             state_snap = current_state.cpu().numpy().copy()
+            # Append term3 (grad_phi projection) and kappa to the state snap
+            # Both are (N,) tensors. We want to hstack them to make (N, 12).
+            term3_np = term3.cpu().numpy().reshape(-1, 1)
+            kappa_np = kappa.cpu().numpy().reshape(-1, 1)
+            state_snap = np.hstack((state_snap, term3_np, kappa_np))
             history.append(state_snap)
             
             # --- ZMQ Stream Flush (dynamically scaled to prevent GPU→CPU bottleneck) ---
@@ -2237,7 +2220,7 @@ if args.mode in ["double-slit", "quantum-eraser", "heat-sink-eraser", "single-ed
                     pilot_wave_force = (1.0 / m0_safe) * grad_at_particle * (C**2) * args.vacuum
                     pilot_wave_force = torch.clamp(pilot_wave_force, min=-25000.0, max=25000.0)
                 
-                if DBB_GUIDANCE and getattr(args, 'photon_emission', 0):
+                if DBB_GUIDANCE:
                     # ===== de BROGLIE-BOHM GUIDANCE =====
                     # The wave gradient directly SETS the electron's transverse velocity.
                     # The electron surfs the wave — the wave IS the equation of motion.

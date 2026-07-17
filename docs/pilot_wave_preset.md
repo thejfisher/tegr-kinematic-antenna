@@ -61,7 +61,7 @@ python teleparallel_collider.py \
     --wall_depth 1 \
     --dt 0.001 \
     --total_ticks 5000 \
-    --zmq_target 100.66.100.83:7777
+    --zmq_target 127.0.0.1:7777
 ```
 
 ## Recommended Hyper-Parameters

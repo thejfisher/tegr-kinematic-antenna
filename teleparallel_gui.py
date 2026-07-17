@@ -553,7 +553,7 @@ class TeleparallelGUI(QMainWindow):
         self.preset_container = QWidget()
         preset_layout_inner = QVBoxLayout(self.preset_container)
         self.preset_combo = NoScrollComboBox()
-        self.preset_combo.addItems(["0. Custom", "1. 1-Layer Classical Scatter", "2. 5-Layer Phase Router", "3. 3D Phase Router (5x3)", "4. AMPS Firewall (Gravity Sink)", "5. Direct Collapse (N-Body)", "6. Delayed Choice Quantum Eraser", "7. Delayed Choice (Heat Sink Eraser)", "8. Veneziano Amplitude (Soft Scattering)", "9. Photoelectric Effect", "10. Holographic Entanglement", "11. Holographic Shell (Dark Matter Void)", "12. Holographic Ring (Accretion Void)", "13. Quantum Electrodynamics (QED)", "14. Gravitational Wave (NANOGrav)", "15. GHZ Entanglement (Active Firewall)", "16. High-Gamma Test Preset", "17. The Mark Thompson Experiment", "18. Stochastic Hum (Mark Thompson Phase 2)", "19. Mass Sweep: Electron (0.511 MeV)", "20. Mass Sweep: Pion (134.98 MeV)", "21. Mass Sweep: Kaon (493.68 MeV)", "22. Mass Sweep: Proton (938.27 MeV)", "23. Mass Sweep: 4xProton (3753.05 MeV)", "24. Direct Collapse (N=10)", "25. Single-Slit Control", "26. Doubled Separation (d=12.0)", "27. Einstein's Stick (Classical)", "28. Einstein's Stick (Entangled)", "29. AdS-CFT Correspondence", "30. Pilot Wave (de Broglie-Bohm)", "31. Pilot Wave Double-Slit (Histogram)", "32. Couder Pilot Wave (Memory Bath)", "33. Couder Pilot Wave (Interference Capture)", "34. SR Time Dilation (Proper Time)", "35. Twin Paradox (Tau Comparison)", "36. Kepler Orbit (Newtonian)", "37. Gravity Slide (Terminator)", "38. Couder Pilot Wave (CFL Unlocked c=100)", "39. Bohmian Reverse (PDH 1979 Verification)", "40. Experimental Reverse Validation (Tonomura)", "41. Analytical Wave Initialization (Plane Wave)", "42. MOSFET Corner Diffraction (Leakage)", "43. MOSFET Plane Wave (Corner + dBB)", "44. Simple Collider (Sandbox)", "45. Quantum Tunneling (Pauli Barrier)", "46. Kepler Orbit (Vanishing Sun)", "47. RAE v2.1 Validation Matrix (Batch)", "48. Arndt Sweep 1: Sub-electron (m=0.1)", "49. Arndt Sweep 2: Light (m=0.3)", "50. Arndt Sweep 3: Electron (m=0.511)", "51. Arndt Sweep 4: Transition (m=0.75)", "52. Arndt Sweep 5: 2x Electron (m=1.0)", "53. Arndt Sweep 6: 4x Electron (m=2.0)", "54. Arndt Sweep 7: 10x Electron (m=5.0)", "55. RAE Mass Explorer (Free Slider)", "56. RAE Compensated Sweep (7-Run Batch)"])
+        self.preset_combo.addItems(["0. Custom", "1. 1-Layer Classical Scatter", "2. 5-Layer Phase Router", "3. 3D Phase Router (5x3)", "4. AMPS Firewall (Gravity Sink)", "5. Direct Collapse (N-Body)", "6. Delayed Choice Quantum Eraser", "7. Delayed Choice (Heat Sink Eraser)", "8. Veneziano Amplitude (Soft Scattering)", "9. Photoelectric Effect", "10. Holographic Entanglement", "11. Holographic Shell (Dark Matter Void)", "12. Holographic Ring (Accretion Void)", "13. Quantum Electrodynamics (QED)", "14. Gravitational Wave (NANOGrav)", "15. GHZ Entanglement (Active Firewall)", "16. High-Gamma Test Preset", "17. The Mark Thompson Experiment", "18. Stochastic Hum (Mark Thompson Phase 2)", "19. Mass Sweep: Electron (0.511 MeV)", "20. Mass Sweep: Pion (134.98 MeV)", "21. Mass Sweep: Kaon (493.68 MeV)", "22. Mass Sweep: Proton (938.27 MeV)", "23. Mass Sweep: 4xProton (3753.05 MeV)", "24. Direct Collapse (N=10)", "25. Single-Slit Control", "26. Doubled Separation (d=12.0)", "27. Einstein's Stick (Classical)", "28. Einstein's Stick (Entangled)", "29. AdS-CFT Correspondence", "30. Pilot Wave (de Broglie-Bohm)", "31. Pilot Wave Double-Slit (Histogram)", "32. Couder Pilot Wave (Memory Bath)", "33. Couder Pilot Wave (Interference Capture)", "34. SR Time Dilation (Proper Time)", "35. Twin Paradox (Tau Comparison)", "36. Kepler Orbit (Newtonian)", "37. Gravity Slide (Terminator)", "38. Couder Pilot Wave (CFL Unlocked c=100)", "39. Bohmian Reverse (PDH 1979 Verification)", "40. Experimental Reverse Validation (Tonomura)", "41. Analytical Wave Initialization (Plane Wave)", "42. MOSFET Corner Diffraction (Leakage)", "43. MOSFET Plane Wave (Corner + dBB)", "44. Simple Collider (Sandbox)", "45. Quantum Tunneling (Pauli Barrier)", "46. Kepler Orbit (Vanishing Sun)", "47. RAE v2.1 Validation Matrix (Batch)", "48. Arndt Sweep 1: Sub-electron (m=0.1)", "49. Arndt Sweep 2: Light (m=0.3)", "50. Arndt Sweep 3: Electron (m=0.511)", "51. Arndt Sweep 4: Transition (m=0.75)", "52. Arndt Sweep 5: 2x Electron (m=1.0)", "53. Arndt Sweep 6: 4x Electron (m=2.0)", "54. Arndt Sweep 7: 10x Electron (m=5.0)", "55. RAE Mass Explorer (Free Slider)", "56. RAE Compensated Sweep (7-Run Batch)", "57. Manuscript 8 Validation Matrix (Batch)"])
         self.preset_combo.currentIndexChanged.connect(self.apply_preset)
         preset_layout_inner.addWidget(self.preset_combo)
         preset_group_layout = QVBoxLayout()
@@ -922,11 +922,11 @@ class TeleparallelGUI(QMainWindow):
         self.pipeline_checkbox = QCheckBox("Enable ZMQ Ping-Pong Distributed Pipeline")
         self.pipeline_checkbox.setChecked(True)
         
-        self.physics_ip_input = QLineEdit("100.122.147.67")
+        self.physics_ip_input = QLineEdit("127.0.0.1")
         self.physics_user_input = QLineEdit("thejfisher")
         self.physics_dir_input = QLineEdit("~/AI_Vault/teleparallel_sim_photons")
         
-        self.buffer_ip_input = QLineEdit("100.66.100.83")
+        self.buffer_ip_input = QLineEdit("127.0.0.1")
         self.buffer_user_input = QLineEdit("hal")
         self.buffer_port_input = QLineEdit("7777")
         self.buffer_dir_input = QLineEdit("~/hxseq-vsgx4/teleparallel_sim_photons")
@@ -2511,6 +2511,67 @@ class TeleparallelGUI(QMainWindow):
                 self.batch_queue[0]["setup_fn"]()
                 self.batch_label.setText(f"BATCH QUEUED: {len(self.batch_queue)} runs | Next: {self.batch_queue[0]['label']}")
                 self.batch_label.setVisible(True)
+        elif text == "Manuscript 8 Validation Matrix (Batch)":
+            self.batch_queue = []
+            
+            def make_setup_17(rae_mode_val):
+                def setup():
+                    self.paper1_exact_cb.setChecked(False)
+                    self.spin_coupling_cb.setChecked(True)
+                    self.thermal_bath_cb.setChecked(False)
+                    self.mode_combo.setCurrentText("antenna")
+                    self.inputs["num_particles"].setText("101")
+                    self.inputs["num_anchors"].setText("100")
+                    self.inputs["mass_a"].setText("1.0")
+                    self.inputs["mass_b"].setText("1.0")
+                    self.inputs["pauli"].setText("500.0")
+                    self.inputs["vacuum"].setText("0.001")
+                    self.inputs["torsion"].setText("1.0")
+                    self.inputs["collapse_radius"].setText("5.0")
+                    self.inputs["galactic_spin"].setText("0.5")
+                    self.inputs["dt"].setText("0.001")
+                    self.inputs["total_ticks"].setText("10000")
+                    self.eraser_active_cb.setChecked(False)
+                    self.pauli_power_combo.setCurrentIndex(0)
+                    self.rae_mode_cb.setChecked(bool(rae_mode_val))
+                return setup
+
+            def make_setup_18(rae_mode_val):
+                def setup():
+                    self.paper1_exact_cb.setChecked(False)
+                    self.spin_coupling_cb.setChecked(True)
+                    self.thermal_bath_cb.setChecked(False)
+                    self.mode_combo.setCurrentText("antenna")
+                    self.inputs["num_particles"].setText("101")
+                    self.inputs["num_anchors"].setText("100")
+                    self.inputs["mass_a"].setText("1.0")
+                    self.inputs["mass_b"].setText("1.0")
+                    self.inputs["pauli"].setText("500.0")
+                    self.inputs["vacuum"].setText("0.001")
+                    self.inputs["torsion"].setText("1.0")
+                    self.inputs["collapse_radius"].setText("5.0")
+                    self.inputs["galactic_spin"].setText("0.5")
+                    self.inputs["dt"].setText("0.001")
+                    self.inputs["total_ticks"].setText("10000")
+                    self.eraser_active_cb.setChecked(False)
+                    self.pauli_power_combo.setCurrentIndex(0)
+                    self.inputs["jitter_amp"].setText("0.05")
+                    self.inputs["wave_dissipation"].setText("0.999")
+                    self.inputs["amps_cooling_cap"].setText("0.5")
+                    self.rae_mode_cb.setChecked(bool(rae_mode_val))
+                return setup
+
+            self.batch_queue.append({"label": "17. The Mark Thompson Experiment (RAE 0)", "setup_fn": make_setup_17(0)})
+            self.batch_queue.append({"label": "18. Stochastic Hum (RAE 0)", "setup_fn": make_setup_18(0)})
+            self.batch_queue.append({"label": "17. The Mark Thompson Experiment (RAE 1)", "setup_fn": make_setup_17(1)})
+            self.batch_queue.append({"label": "18. Stochastic Hum (RAE 1)", "setup_fn": make_setup_18(1)})
+
+            if self.batch_queue:
+                self._batch_total = len(self.batch_queue)
+                self.batch_queue[0]["setup_fn"]()
+                self.batch_label.setText(f"BATCH QUEUED: {len(self.batch_queue)} runs | Next: {self.batch_queue[0]['label']}")
+                self.batch_label.setVisible(True)
+
 
         # Disconnect slider auto-compute when leaving that preset
         if not text.endswith("(Free Slider)"):

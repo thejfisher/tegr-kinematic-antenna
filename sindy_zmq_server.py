@@ -105,6 +105,12 @@ def run_sindy_and_ollama(history, ai_url, ai_model, no_llm=False, run_label="def
     X_features = np.column_stack((x, y, z, r, hue, gamma, m0, inv_r3, inv_r2, sin_hue, cos_hue, m0_over_gamma, x_over_r3, y_over_r3, z_over_r3))
     feature_names = ['x', 'y', 'z', 'r', 'hue', 'gamma', 'm0', '1/r^3', '1/r^2', 'sin(hue)', 'cos(hue)', 'm0/gamma', 'x/r^3', 'y/r^3', 'z/r^3']
     
+    if history.shape[2] >= 12:
+        grad_phi = history[:, tracker_idx, 10]
+        kappa = history[:, tracker_idx, 11]
+        X_features = np.column_stack((X_features, grad_phi, kappa))
+        feature_names.extend(['gradPhi', 'kappa'])
+    
     vx = px / (gamma * m0)
     vy = py / (gamma * m0)
     vz = pz / (gamma * m0)
@@ -115,7 +121,9 @@ def run_sindy_and_ollama(history, ai_url, ai_model, no_llm=False, run_label="def
     print(f"Using dt = {dt} for finite difference computation.")
     fd = ps.FiniteDifference()
     
-    internal_vars = np.column_stack((hue, gamma, m0))
+    # Unwrap hue to prevent artificial numerical spikes in the derivative when crossing 2*pi
+    unwrapped_hue = np.unwrap(hue)
+    internal_vars = np.column_stack((unwrapped_hue, gamma, m0))
     internal_dots = fd._differentiate(internal_vars, t=dt)
     X_ddots = fd._differentiate(np.column_stack((vx, vy, vz, r_dot)), t=dt)
     X_targets = np.column_stack((X_ddots, internal_dots))
@@ -267,8 +275,8 @@ def run_sindy_and_ollama(history, ai_url, ai_model, no_llm=False, run_label="def
         print(f"Trimming {trim} targets to match features.")
         X_targets = X_targets[trim:]
     
-    generalized_library = ps.PolynomialLibrary(degree=1, include_bias=True)
-    optimizer = ps.STLSQ(threshold=0.01, alpha=0.001, normalize_columns=True)
+    generalized_library = ps.PolynomialLibrary(degree=1, include_bias=False)
+    optimizer = ps.STLSQ(threshold=0.01, alpha=0.1, normalize_columns=True)
     model = ps.SINDy(feature_library=generalized_library, optimizer=optimizer)
     
     valid_mask = np.isfinite(X_features).all(axis=1) & np.isfinite(X_targets).all(axis=1)
@@ -462,7 +470,7 @@ INSTRUCTIONS FOR TRANSLATION:
 def main():
     parser = argparse.ArgumentParser(description="ZeroMQ RAM Buffer & PySINDy Server")
     parser.add_argument("--port", type=int, default=7777, help="ZMQ Port to listen on")
-    parser.add_argument("--ai_url", type=str, default="http://100.122.147.67:11434", help="Thejfisher Ollama API URL")
+    parser.add_argument("--ai_url", type=str, default="http://127.0.0.1:11434", help="Thejfisher Ollama API URL")
     parser.add_argument("--ai_model", type=str, default="gemma4:e4b", help="Ollama model name")
     parser.add_argument("--no_llm", action="store_true", help="Skip Ollama request and just print equations")
     parser.add_argument("--persistent", action="store_true", help="Do not exit after one run (for stress tests)")
